@@ -24,7 +24,7 @@ Note: Clone the project using: `git clone --recurse-submodules https://github.co
 
 The new architecture introduced in Split Block Bloom Filter leverages SIMD instructions (AVX2) from intrinsic functions and uses constant number of hashing function to make the no: of hash functions independent of the False Positive Rate or number of elements the filter can store, which significantly boosts the performance of the filter at the cost of extra space (Normal Bloom Filter has smaller False Positive Rate compared to Split Block Bloom filter with the same max_size)
 
-Ref: (https://arxiv.org/pdf/2101.01719)[https://arxiv.org/pdf/2101.01719]
+Ref: [https://arxiv.org/pdf/2101.01719](https://arxiv.org/pdf/2101.01719)
 
 ### Setup the project 
 
