@@ -1,4 +1,4 @@
-# Install script for directory: /home/subra-pt7817/projects/myhashmap
+# Install script for directory: /home/subra-pt7817/projects/My_Tasks/myhashmap
 
 # Set the install prefix
 if(NOT DEFINED CMAKE_INSTALL_PREFIX)
@@ -49,7 +49,7 @@ if(CMAKE_INSTALL_COMPONENT STREQUAL "Unspecified" OR NOT CMAKE_INSTALL_COMPONENT
          FILE "$ENV{DESTDIR}${CMAKE_INSTALL_PREFIX}/lib/libhashmap.so"
          RPATH "")
   endif()
-  file(INSTALL DESTINATION "${CMAKE_INSTALL_PREFIX}/lib" TYPE SHARED_LIBRARY FILES "/home/subra-pt7817/projects/myhashmap/build/libhashmap.so")
+  file(INSTALL DESTINATION "${CMAKE_INSTALL_PREFIX}/lib" TYPE SHARED_LIBRARY FILES "/home/subra-pt7817/projects/My_Tasks/myhashmap/build/libhashmap.so")
   if(EXISTS "$ENV{DESTDIR}${CMAKE_INSTALL_PREFIX}/lib/libhashmap.so" AND
      NOT IS_SYMLINK "$ENV{DESTDIR}${CMAKE_INSTALL_PREFIX}/lib/libhashmap.so")
     if(CMAKE_INSTALL_DO_STRIP)
@@ -62,17 +62,17 @@ if(CMAKE_INSTALL_COMPONENT STREQUAL "Unspecified" OR NOT CMAKE_INSTALL_COMPONENT
 endif()
 
 if(CMAKE_INSTALL_COMPONENT STREQUAL "Unspecified" OR NOT CMAKE_INSTALL_COMPONENT)
-  include("/home/subra-pt7817/projects/myhashmap/build/CMakeFiles/hashmap.dir/install-cxx-module-bmi-noconfig.cmake" OPTIONAL)
+  include("/home/subra-pt7817/projects/My_Tasks/myhashmap/build/CMakeFiles/hashmap.dir/install-cxx-module-bmi-noconfig.cmake" OPTIONAL)
 endif()
 
 if(CMAKE_INSTALL_COMPONENT STREQUAL "Unspecified" OR NOT CMAKE_INSTALL_COMPONENT)
-  file(INSTALL DESTINATION "${CMAKE_INSTALL_PREFIX}/include" TYPE FILE FILES "/home/subra-pt7817/projects/myhashmap/src/hashmap.h")
+  file(INSTALL DESTINATION "${CMAKE_INSTALL_PREFIX}/include" TYPE FILE FILES "/home/subra-pt7817/projects/My_Tasks/myhashmap/src/hashmap.h")
 endif()
 
 string(REPLACE ";" "\n" CMAKE_INSTALL_MANIFEST_CONTENT
        "${CMAKE_INSTALL_MANIFEST_FILES}")
 if(CMAKE_INSTALL_LOCAL_ONLY)
-  file(WRITE "/home/subra-pt7817/projects/myhashmap/build/install_local_manifest.txt"
+  file(WRITE "/home/subra-pt7817/projects/My_Tasks/myhashmap/build/install_local_manifest.txt"
      "${CMAKE_INSTALL_MANIFEST_CONTENT}")
 endif()
 if(CMAKE_INSTALL_COMPONENT)
@@ -88,6 +88,6 @@ else()
 endif()
 
 if(NOT CMAKE_INSTALL_LOCAL_ONLY)
-  file(WRITE "/home/subra-pt7817/projects/myhashmap/build/${CMAKE_INSTALL_MANIFEST}"
+  file(WRITE "/home/subra-pt7817/projects/My_Tasks/myhashmap/build/${CMAKE_INSTALL_MANIFEST}"
      "${CMAKE_INSTALL_MANIFEST_CONTENT}")
 endif()

@@ -1,6 +1,6 @@
 CMakeFiles/main.dir/main.c.o: \
- /home/subra-pt7817/projects/myhashmap/main.c /usr/include/stdc-predef.h \
- /usr/include/stdio.h \
+ /home/subra-pt7817/projects/My_Tasks/myhashmap/main.c \
+ /usr/include/stdc-predef.h /usr/include/stdio.h \
  /usr/include/x86_64-linux-gnu/bits/libc-header-start.h \
  /usr/include/features.h /usr/include/features-time64.h \
  /usr/include/x86_64-linux-gnu/bits/wordsize.h \
@@ -52,4 +52,4 @@ CMakeFiles/main.dir/main.c.o: \
  /usr/include/x86_64-linux-gnu/bits/types/locale_t.h \
  /usr/include/x86_64-linux-gnu/bits/types/__locale_t.h \
  /usr/include/strings.h \
- /home/subra-pt7817/projects/myhashmap/src/hashmap.h
+ /home/subra-pt7817/projects/My_Tasks/myhashmap/src/hashmap.h

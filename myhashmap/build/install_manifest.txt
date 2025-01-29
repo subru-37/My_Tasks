@@ -1,2 +1,2 @@
-/usr/local/lib/libhashmap.so
-/usr/local/include/hashmap.h
+/home/subra-pt7817/projects/myhashmap/bin/lib/libhashmap.so
+/home/subra-pt7817/projects/myhashmap/bin/include/hashmap.h

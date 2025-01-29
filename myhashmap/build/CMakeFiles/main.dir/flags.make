@@ -4,7 +4,7 @@
 # compile C with /usr/bin/cc
 C_DEFINES = 
 
-C_INCLUDES = -I/home/subra-pt7817/projects/myhashmap/src
+C_INCLUDES = -I/home/subra-pt7817/projects/My_Tasks/myhashmap/src
 
 C_FLAGS = -std=gnu99
 

@@ -1,5 +1,5 @@
 CMakeFiles/hashmap.dir/src/hashmap.c.o: \
- /home/subra-pt7817/projects/myhashmap/src/hashmap.c \
+ /home/subra-pt7817/projects/My_Tasks/myhashmap/src/hashmap.c \
  /usr/include/stdc-predef.h /usr/include/stdio.h \
  /usr/include/x86_64-linux-gnu/bits/libc-header-start.h \
  /usr/include/features.h /usr/include/features-time64.h \
@@ -59,4 +59,4 @@ CMakeFiles/hashmap.dir/src/hashmap.c.o: \
  /usr/include/x86_64-linux-gnu/bits/fp-fast.h \
  /usr/include/x86_64-linux-gnu/bits/mathcalls-helper-functions.h \
  /usr/include/x86_64-linux-gnu/bits/mathcalls.h \
- /home/subra-pt7817/projects/myhashmap/src/hashmap.h
+ /home/subra-pt7817/projects/My_Tasks/myhashmap/src/hashmap.h
