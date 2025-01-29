@@ -1,7 +1,7 @@
 CMakeFiles/sbbf.dir/src/SplitBlockBloomFilter/sbbf.c.o: \
- /home/subra-pt7817/projects/mybloomfilter/src/SplitBlockBloomFilter/sbbf.c \
+ /home/subra-pt7817/projects/My_Tasks/mybloomfilter/src/SplitBlockBloomFilter/sbbf.c \
  /usr/include/stdc-predef.h \
- /home/subra-pt7817/projects/mybloomfilter/src/libfilter/c/include/filter/block.h \
+ /home/subra-pt7817/projects/My_Tasks/mybloomfilter/src/libfilter/c/include/filter/block.h \
  /usr/lib/gcc/x86_64-linux-gnu/13/include/limits.h \
  /usr/lib/gcc/x86_64-linux-gnu/13/include/syslimits.h \
  /usr/include/limits.h \
@@ -150,9 +150,9 @@ CMakeFiles/sbbf.dir/src/SplitBlockBloomFilter/sbbf.c.o: \
  /usr/lib/gcc/x86_64-linux-gnu/13/include/prfchwintrin.h \
  /usr/lib/gcc/x86_64-linux-gnu/13/include/keylockerintrin.h \
  /usr/lib/gcc/x86_64-linux-gnu/13/include/amxfp16intrin.h \
- /home/subra-pt7817/projects/mybloomfilter/src/libfilter/c/include/filter/memory.h \
+ /home/subra-pt7817/projects/My_Tasks/mybloomfilter/src/libfilter/c/include/filter/memory.h \
  /usr/include/assert.h \
- /home/subra-pt7817/projects/mybloomfilter/src/SplitBlockBloomFilter/sbbf.h \
+ /home/subra-pt7817/projects/My_Tasks/mybloomfilter/src/SplitBlockBloomFilter/sbbf.h \
  /usr/local/include/murmur3.h /usr/include/stdio.h \
  /usr/lib/gcc/x86_64-linux-gnu/13/include/stdarg.h \
  /usr/include/x86_64-linux-gnu/bits/types/__fpos_t.h \

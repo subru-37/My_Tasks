@@ -4,7 +4,7 @@
 # compile C with /usr/bin/cc
 C_DEFINES = 
 
-C_INCLUDES = -I/home/subra-pt7817/projects/mybloomfilter/src/bloomfilter -I/home/subra-pt7817/projects/mybloomfilter/src/murmur3 -I/home/subra-pt7817/projects/mybloomfilter/src/libfilter/c/include/filter -I/home/subra-pt7817/projects/mybloomfilter/src/SplitBlockBloomFilter -I/home/subra-pt7817/projects/mybloomfilter/src/libfilter/c/include
+C_INCLUDES = -I/home/subra-pt7817/projects/My_Tasks/mybloomfilter/src/bloomfilter -I/home/subra-pt7817/projects/My_Tasks/mybloomfilter/src/murmur3 -I/home/subra-pt7817/projects/My_Tasks/mybloomfilter/src/libfilter/c/include/filter -I/home/subra-pt7817/projects/My_Tasks/mybloomfilter/src/SplitBlockBloomFilter -I/home/subra-pt7817/projects/My_Tasks/mybloomfilter/src/libfilter/c/include
 
 C_FLAGS = -mavx2
 

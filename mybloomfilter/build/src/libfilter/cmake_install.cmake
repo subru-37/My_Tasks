@@ -1,8 +1,8 @@
-# Install script for directory: /home/subra-pt7817/projects/mybloomfilter/src/libfilter
+# Install script for directory: /home/subra-pt7817/projects/My_Tasks/mybloomfilter/src/libfilter
 
 # Set the install prefix
 if(NOT DEFINED CMAKE_INSTALL_PREFIX)
-  set(CMAKE_INSTALL_PREFIX "/home/subra-pt7817/projects/mybloomfilter/bin")
+  set(CMAKE_INSTALL_PREFIX "bin")
 endif()
 string(REGEX REPLACE "/$" "" CMAKE_INSTALL_PREFIX "${CMAKE_INSTALL_PREFIX}")
 
@@ -44,19 +44,19 @@ endif()
 
 if(NOT CMAKE_INSTALL_LOCAL_ONLY)
   # Include the install script for the subdirectory.
-  include("/home/subra-pt7817/projects/mybloomfilter/build/src/libfilter/c/cmake_install.cmake")
+  include("/home/subra-pt7817/projects/My_Tasks/mybloomfilter/build/src/libfilter/c/cmake_install.cmake")
 endif()
 
 if(NOT CMAKE_INSTALL_LOCAL_ONLY)
   # Include the install script for the subdirectory.
-  include("/home/subra-pt7817/projects/mybloomfilter/build/src/libfilter/cpp/cmake_install.cmake")
+  include("/home/subra-pt7817/projects/My_Tasks/mybloomfilter/build/src/libfilter/cpp/cmake_install.cmake")
 endif()
 
 if(CMAKE_INSTALL_COMPONENT STREQUAL "Unspecified" OR NOT CMAKE_INSTALL_COMPONENT)
   if(EXISTS "$ENV{DESTDIR}${CMAKE_INSTALL_PREFIX}/lib/cmake/libfilter/libfilterTargets.cmake")
     file(DIFFERENT _cmake_export_file_changed FILES
          "$ENV{DESTDIR}${CMAKE_INSTALL_PREFIX}/lib/cmake/libfilter/libfilterTargets.cmake"
-         "/home/subra-pt7817/projects/mybloomfilter/build/src/libfilter/CMakeFiles/Export/d62623fdae663e0f29e2614895c45e7f/libfilterTargets.cmake")
+         "/home/subra-pt7817/projects/My_Tasks/mybloomfilter/build/src/libfilter/CMakeFiles/Export/d62623fdae663e0f29e2614895c45e7f/libfilterTargets.cmake")
     if(_cmake_export_file_changed)
       file(GLOB _cmake_old_config_files "$ENV{DESTDIR}${CMAKE_INSTALL_PREFIX}/lib/cmake/libfilter/libfilterTargets-*.cmake")
       if(_cmake_old_config_files)
@@ -69,22 +69,22 @@ if(CMAKE_INSTALL_COMPONENT STREQUAL "Unspecified" OR NOT CMAKE_INSTALL_COMPONENT
     endif()
     unset(_cmake_export_file_changed)
   endif()
-  file(INSTALL DESTINATION "${CMAKE_INSTALL_PREFIX}/lib/cmake/libfilter" TYPE FILE FILES "/home/subra-pt7817/projects/mybloomfilter/build/src/libfilter/CMakeFiles/Export/d62623fdae663e0f29e2614895c45e7f/libfilterTargets.cmake")
+  file(INSTALL DESTINATION "${CMAKE_INSTALL_PREFIX}/lib/cmake/libfilter" TYPE FILE FILES "/home/subra-pt7817/projects/My_Tasks/mybloomfilter/build/src/libfilter/CMakeFiles/Export/d62623fdae663e0f29e2614895c45e7f/libfilterTargets.cmake")
   if(CMAKE_INSTALL_CONFIG_NAME MATCHES "^()$")
-    file(INSTALL DESTINATION "${CMAKE_INSTALL_PREFIX}/lib/cmake/libfilter" TYPE FILE FILES "/home/subra-pt7817/projects/mybloomfilter/build/src/libfilter/CMakeFiles/Export/d62623fdae663e0f29e2614895c45e7f/libfilterTargets-noconfig.cmake")
+    file(INSTALL DESTINATION "${CMAKE_INSTALL_PREFIX}/lib/cmake/libfilter" TYPE FILE FILES "/home/subra-pt7817/projects/My_Tasks/mybloomfilter/build/src/libfilter/CMakeFiles/Export/d62623fdae663e0f29e2614895c45e7f/libfilterTargets-noconfig.cmake")
   endif()
 endif()
 
 if(CMAKE_INSTALL_COMPONENT STREQUAL "Unspecified" OR NOT CMAKE_INSTALL_COMPONENT)
   file(INSTALL DESTINATION "${CMAKE_INSTALL_PREFIX}/lib/cmake/libfilter" TYPE FILE FILES
-    "/home/subra-pt7817/projects/mybloomfilter/build/src/libfilter/libfilterConfig.cmake"
-    "/home/subra-pt7817/projects/mybloomfilter/build/src/libfilter/libfilterConfigVersion.cmake"
+    "/home/subra-pt7817/projects/My_Tasks/mybloomfilter/build/src/libfilter/libfilterConfig.cmake"
+    "/home/subra-pt7817/projects/My_Tasks/mybloomfilter/build/src/libfilter/libfilterConfigVersion.cmake"
     )
 endif()
 
 string(REPLACE ";" "\n" CMAKE_INSTALL_MANIFEST_CONTENT
        "${CMAKE_INSTALL_MANIFEST_FILES}")
 if(CMAKE_INSTALL_LOCAL_ONLY)
-  file(WRITE "/home/subra-pt7817/projects/mybloomfilter/build/src/libfilter/install_local_manifest.txt"
+  file(WRITE "/home/subra-pt7817/projects/My_Tasks/mybloomfilter/build/src/libfilter/install_local_manifest.txt"
      "${CMAKE_INSTALL_MANIFEST_CONTENT}")
 endif()

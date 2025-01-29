@@ -1,7 +1,7 @@
 cmake_minimum_required(VERSION 3.13)
 project(MyBloomFilter)
 enable_language(C)
-set(CMAKE_INSTALL_PREFIX /home/subra-pt7817/projects/mybloomfilter/bin)
+set(CMAKE_INSTALL_PREFIX bin)
 
 include(CheckCCompilerFlag)
 

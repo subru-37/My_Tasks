@@ -57,7 +57,7 @@ set_target_properties(libfilter::internal PROPERTIES
 add_library(libfilter::c STATIC IMPORTED)
 
 set_target_properties(libfilter::c PROPERTIES
-  INTERFACE_INCLUDE_DIRECTORIES "/home/subra-pt7817/projects/mybloomfilter/src/libfilter/c/include"
+  INTERFACE_INCLUDE_DIRECTORIES "/home/subra-pt7817/projects/My_Tasks/mybloomfilter/src/libfilter/c/include"
   INTERFACE_LINK_LIBRARIES "\$<LINK_ONLY:libfilter::internal>"
 )
 
@@ -65,7 +65,7 @@ set_target_properties(libfilter::c PROPERTIES
 add_library(libfilter::cxx INTERFACE IMPORTED)
 
 set_target_properties(libfilter::cxx PROPERTIES
-  INTERFACE_INCLUDE_DIRECTORIES "/home/subra-pt7817/projects/mybloomfilter/src/libfilter/cpp/include"
+  INTERFACE_INCLUDE_DIRECTORIES "/home/subra-pt7817/projects/My_Tasks/mybloomfilter/src/libfilter/cpp/include"
   INTERFACE_LINK_LIBRARIES "libfilter::internal;libfilter::c"
 )
 
@@ -73,7 +73,7 @@ set_target_properties(libfilter::cxx PROPERTIES
 set_property(TARGET libfilter::c APPEND PROPERTY IMPORTED_CONFIGURATIONS NOCONFIG)
 set_target_properties(libfilter::c PROPERTIES
   IMPORTED_LINK_INTERFACE_LANGUAGES_NOCONFIG "C"
-  IMPORTED_LOCATION_NOCONFIG "/home/subra-pt7817/projects/mybloomfilter/build/src/libfilter/c/libfilter.a"
+  IMPORTED_LOCATION_NOCONFIG "/home/subra-pt7817/projects/My_Tasks/mybloomfilter/build/src/libfilter/c/libfilter.a"
   )
 
 # This file does not depend on other imported targets which have

@@ -1,5 +1,5 @@
 src/libfilter/c/CMakeFiles/libfilter_c.dir/lib/memory.c.o: \
- /home/subra-pt7817/projects/mybloomfilter/src/libfilter/c/lib/memory.c \
+ /home/subra-pt7817/projects/My_Tasks/mybloomfilter/src/libfilter/c/lib/memory.c \
  /usr/include/stdc-predef.h /usr/include/assert.h /usr/include/features.h \
  /usr/include/features-time64.h \
  /usr/include/x86_64-linux-gnu/bits/wordsize.h \
@@ -45,8 +45,8 @@ src/libfilter/c/CMakeFiles/libfilter_c.dir/lib/memory.c.o: \
  /usr/include/x86_64-linux-gnu/bits/struct_mutex.h \
  /usr/include/x86_64-linux-gnu/bits/struct_rwlock.h /usr/include/alloca.h \
  /usr/include/x86_64-linux-gnu/bits/stdlib-float.h \
- /home/subra-pt7817/projects/mybloomfilter/src/libfilter/c/include/filter/memory.h \
- /home/subra-pt7817/projects/mybloomfilter/src/libfilter/c/lib/memory-internal.h \
+ /home/subra-pt7817/projects/My_Tasks/mybloomfilter/src/libfilter/c/include/filter/memory.h \
+ /home/subra-pt7817/projects/My_Tasks/mybloomfilter/src/libfilter/c/lib/memory-internal.h \
  /usr/include/stdio.h /usr/lib/gcc/x86_64-linux-gnu/13/include/stdarg.h \
  /usr/include/x86_64-linux-gnu/bits/types/__fpos_t.h \
  /usr/include/x86_64-linux-gnu/bits/types/__mbstate_t.h \

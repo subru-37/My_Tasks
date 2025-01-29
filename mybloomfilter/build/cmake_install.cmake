@@ -1,8 +1,8 @@
-# Install script for directory: /home/subra-pt7817/projects/mybloomfilter
+# Install script for directory: /home/subra-pt7817/projects/My_Tasks/mybloomfilter
 
 # Set the install prefix
 if(NOT DEFINED CMAKE_INSTALL_PREFIX)
-  set(CMAKE_INSTALL_PREFIX "/home/subra-pt7817/projects/mybloomfilter/bin")
+  set(CMAKE_INSTALL_PREFIX "bin")
 endif()
 string(REGEX REPLACE "/$" "" CMAKE_INSTALL_PREFIX "${CMAKE_INSTALL_PREFIX}")
 
@@ -43,51 +43,51 @@ if(NOT DEFINED CMAKE_OBJDUMP)
 endif()
 
 if(CMAKE_INSTALL_COMPONENT STREQUAL "Unspecified" OR NOT CMAKE_INSTALL_COMPONENT)
-  file(INSTALL DESTINATION "${CMAKE_INSTALL_PREFIX}/lib" TYPE STATIC_LIBRARY FILES "/home/subra-pt7817/projects/mybloomfilter/build/libmurmur3.a")
+  file(INSTALL DESTINATION "${CMAKE_INSTALL_PREFIX}/lib" TYPE STATIC_LIBRARY FILES "/home/subra-pt7817/projects/My_Tasks/mybloomfilter/build/libmurmur3.a")
 endif()
 
 if(CMAKE_INSTALL_COMPONENT STREQUAL "Unspecified" OR NOT CMAKE_INSTALL_COMPONENT)
-  include("/home/subra-pt7817/projects/mybloomfilter/build/CMakeFiles/murmur3.dir/install-cxx-module-bmi-noconfig.cmake" OPTIONAL)
+  include("/home/subra-pt7817/projects/My_Tasks/mybloomfilter/build/CMakeFiles/murmur3.dir/install-cxx-module-bmi-noconfig.cmake" OPTIONAL)
 endif()
 
 if(CMAKE_INSTALL_COMPONENT STREQUAL "Unspecified" OR NOT CMAKE_INSTALL_COMPONENT)
-  file(INSTALL DESTINATION "${CMAKE_INSTALL_PREFIX}/include" TYPE FILE FILES "/home/subra-pt7817/projects/mybloomfilter/src/murmur3/murmur3.h")
+  file(INSTALL DESTINATION "${CMAKE_INSTALL_PREFIX}/include" TYPE FILE FILES "/home/subra-pt7817/projects/My_Tasks/mybloomfilter/src/murmur3/murmur3.h")
 endif()
 
 if(CMAKE_INSTALL_COMPONENT STREQUAL "Unspecified" OR NOT CMAKE_INSTALL_COMPONENT)
-  file(INSTALL DESTINATION "${CMAKE_INSTALL_PREFIX}/lib" TYPE STATIC_LIBRARY FILES "/home/subra-pt7817/projects/mybloomfilter/build/libbloomfilter.a")
+  file(INSTALL DESTINATION "${CMAKE_INSTALL_PREFIX}/lib" TYPE STATIC_LIBRARY FILES "/home/subra-pt7817/projects/My_Tasks/mybloomfilter/build/libbloomfilter.a")
 endif()
 
 if(CMAKE_INSTALL_COMPONENT STREQUAL "Unspecified" OR NOT CMAKE_INSTALL_COMPONENT)
-  include("/home/subra-pt7817/projects/mybloomfilter/build/CMakeFiles/bloomfilter.dir/install-cxx-module-bmi-noconfig.cmake" OPTIONAL)
+  include("/home/subra-pt7817/projects/My_Tasks/mybloomfilter/build/CMakeFiles/bloomfilter.dir/install-cxx-module-bmi-noconfig.cmake" OPTIONAL)
 endif()
 
 if(CMAKE_INSTALL_COMPONENT STREQUAL "Unspecified" OR NOT CMAKE_INSTALL_COMPONENT)
-  file(INSTALL DESTINATION "${CMAKE_INSTALL_PREFIX}/include" TYPE FILE FILES "/home/subra-pt7817/projects/mybloomfilter/src/bloomfilter/bloomfilter.h")
+  file(INSTALL DESTINATION "${CMAKE_INSTALL_PREFIX}/include" TYPE FILE FILES "/home/subra-pt7817/projects/My_Tasks/mybloomfilter/src/bloomfilter/bloomfilter.h")
 endif()
 
 if(CMAKE_INSTALL_COMPONENT STREQUAL "Unspecified" OR NOT CMAKE_INSTALL_COMPONENT)
-  file(INSTALL DESTINATION "${CMAKE_INSTALL_PREFIX}/lib" TYPE STATIC_LIBRARY FILES "/home/subra-pt7817/projects/mybloomfilter/build/libsbbf.a")
+  file(INSTALL DESTINATION "${CMAKE_INSTALL_PREFIX}/lib" TYPE STATIC_LIBRARY FILES "/home/subra-pt7817/projects/My_Tasks/mybloomfilter/build/libsbbf.a")
 endif()
 
 if(CMAKE_INSTALL_COMPONENT STREQUAL "Unspecified" OR NOT CMAKE_INSTALL_COMPONENT)
-  include("/home/subra-pt7817/projects/mybloomfilter/build/CMakeFiles/sbbf.dir/install-cxx-module-bmi-noconfig.cmake" OPTIONAL)
+  include("/home/subra-pt7817/projects/My_Tasks/mybloomfilter/build/CMakeFiles/sbbf.dir/install-cxx-module-bmi-noconfig.cmake" OPTIONAL)
 endif()
 
 if(CMAKE_INSTALL_COMPONENT STREQUAL "Unspecified" OR NOT CMAKE_INSTALL_COMPONENT)
-  file(INSTALL DESTINATION "${CMAKE_INSTALL_PREFIX}/include" TYPE FILE FILES "/home/subra-pt7817/projects/mybloomfilter/src/SplitBlockBloomFilter/sbbf.h")
+  file(INSTALL DESTINATION "${CMAKE_INSTALL_PREFIX}/include" TYPE FILE FILES "/home/subra-pt7817/projects/My_Tasks/mybloomfilter/src/SplitBlockBloomFilter/sbbf.h")
 endif()
 
 if(NOT CMAKE_INSTALL_LOCAL_ONLY)
   # Include the install script for each subdirectory.
-  include("/home/subra-pt7817/projects/mybloomfilter/build/src/libfilter/cmake_install.cmake")
+  include("/home/subra-pt7817/projects/My_Tasks/mybloomfilter/build/src/libfilter/cmake_install.cmake")
 
 endif()
 
 string(REPLACE ";" "\n" CMAKE_INSTALL_MANIFEST_CONTENT
        "${CMAKE_INSTALL_MANIFEST_FILES}")
 if(CMAKE_INSTALL_LOCAL_ONLY)
-  file(WRITE "/home/subra-pt7817/projects/mybloomfilter/build/install_local_manifest.txt"
+  file(WRITE "/home/subra-pt7817/projects/My_Tasks/mybloomfilter/build/install_local_manifest.txt"
      "${CMAKE_INSTALL_MANIFEST_CONTENT}")
 endif()
 if(CMAKE_INSTALL_COMPONENT)
@@ -103,6 +103,6 @@ else()
 endif()
 
 if(NOT CMAKE_INSTALL_LOCAL_ONLY)
-  file(WRITE "/home/subra-pt7817/projects/mybloomfilter/build/${CMAKE_INSTALL_MANIFEST}"
+  file(WRITE "/home/subra-pt7817/projects/My_Tasks/mybloomfilter/build/${CMAKE_INSTALL_MANIFEST}"
      "${CMAKE_INSTALL_MANIFEST_CONTENT}")
 endif()

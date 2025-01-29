@@ -1,5 +1,5 @@
 CMakeFiles/bloomfilter.dir/src/bloomfilter/bloomfilter.c.o: \
- /home/subra-pt7817/projects/mybloomfilter/src/bloomfilter/bloomfilter.c \
+ /home/subra-pt7817/projects/My_Tasks/mybloomfilter/src/bloomfilter/bloomfilter.c \
  /usr/include/stdc-predef.h /usr/include/stdio.h \
  /usr/include/x86_64-linux-gnu/bits/libc-header-start.h \
  /usr/include/features.h /usr/include/features-time64.h \
@@ -49,12 +49,12 @@ CMakeFiles/bloomfilter.dir/src/bloomfilter/bloomfilter.c.o: \
  /usr/include/x86_64-linux-gnu/bits/struct_mutex.h \
  /usr/include/x86_64-linux-gnu/bits/struct_rwlock.h /usr/include/alloca.h \
  /usr/include/x86_64-linux-gnu/bits/stdlib-float.h \
- /home/subra-pt7817/projects/mybloomfilter/src/bloomfilter/../murmur3/murmur3.h \
+ /home/subra-pt7817/projects/My_Tasks/mybloomfilter/src/bloomfilter/../murmur3/murmur3.h \
  /usr/lib/gcc/x86_64-linux-gnu/13/include/stdint.h /usr/include/stdint.h \
  /usr/include/x86_64-linux-gnu/bits/wchar.h \
  /usr/include/x86_64-linux-gnu/bits/stdint-uintn.h \
  /usr/include/x86_64-linux-gnu/bits/stdint-least.h \
- /home/subra-pt7817/projects/mybloomfilter/src/bloomfilter/bloomfilter.h \
+ /home/subra-pt7817/projects/My_Tasks/mybloomfilter/src/bloomfilter/bloomfilter.h \
  /usr/include/math.h /usr/include/x86_64-linux-gnu/bits/math-vector.h \
  /usr/include/x86_64-linux-gnu/bits/libm-simd-decl-stubs.h \
  /usr/include/x86_64-linux-gnu/bits/flt-eval-method.h \
