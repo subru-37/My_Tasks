@@ -26,11 +26,27 @@ add_executable(main main.c)
 target_link_libraries(main PRIVATE bloomfilter) # Links the shared library to the executable.
 target_link_libraries(main PRIVATE murmur3) # Links the shared library to the executable.
 target_link_libraries(main PRIVATE bloomfilter murmur3 m)
-target_compile_options(main PRIVATE -mavx2)
-target_compile_options(libfilter_c PRIVATE -mavx2)
 target_link_libraries(main PRIVATE libfilter_c)
 target_link_libraries(sbbf PRIVATE libfilter_c)
-target_compile_options(sbbf PRIVATE -mavx2)
+
+
+# Detect architecture
+if(CMAKE_SYSTEM_PROCESSOR MATCHES "x86_64|AMD64")
+    message(STATUS "Building for x86_64 (Enabling AVX2)")
+    # add_compile_options(-mavx2)  # Enable AVX2
+    target_compile_options(libfilter_c PRIVATE -mavx2)
+    target_compile_options(sbbf PRIVATE -mavx2)
+    target_compile_options(main PRIVATE -mavx2)
+elseif(CMAKE_SYSTEM_PROCESSOR MATCHES "arm64|aarch64")
+    message(STATUS "Building for ARM64 (Enabling NEON)")
+    # add_compile_options(-mfpu=neon)  # Enable NEON
+    target_compile_options(libfilter_c PRIVATE -mfpu=neon)
+    target_compile_options(sbbf PRIVATE -mfpu=neon)
+    target_compile_options(main PRIVATE -mfpu=neon)
+else()
+    message(WARNING "Unknown architecture, no SIMD optimizations enabled.")
+endif()
+
 target_link_libraries(main PRIVATE sbbf murmur3 libfilter_c)
 # target_include_directories(main PRIVATE bin/include) # Ensures the header file is found during compilation.
 # if(EXISTS "${CMAKE_INSTALL_PREFIX}/include")
