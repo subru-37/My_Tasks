@@ -1,0 +1,2 @@
+/usr/bin/ar qc libsbbf.a CMakeFiles/sbbf.dir/src/SplitBlockBloomFilter/sbbf.c.o
+/usr/bin/ranlib libsbbf.a

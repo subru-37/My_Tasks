@@ -1,0 +1,2 @@
+/usr/bin/ar qc libbloomfilter.a CMakeFiles/bloomfilter.dir/src/bloomfilter/bloomfilter.c.o
+/usr/bin/ranlib libbloomfilter.a

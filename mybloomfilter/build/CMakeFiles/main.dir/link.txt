@@ -1,0 +1,1 @@
+/usr/bin/cc -Wl,--dependency-file=CMakeFiles/main.dir/link.d CMakeFiles/main.dir/main.c.o -o main  libbloomfilter.a libmurmur3.a libbloomfilter.a libmurmur3.a -lm src/libfilter/c/libfilter.a libsbbf.a libmurmur3.a src/libfilter/c/libfilter.a

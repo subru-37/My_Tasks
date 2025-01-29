@@ -1,0 +1,1 @@
+/usr/bin/cc -Wl,--dependency-file=CMakeFiles/main.dir/link.d CMakeFiles/main.dir/main.c.o -o main  -Wl,-rpath,/home/subra-pt7817/projects/myhashmap/build libhashmap.so

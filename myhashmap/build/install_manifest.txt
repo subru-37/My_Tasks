@@ -1,0 +1,2 @@
+/usr/local/lib/libhashmap.so
+/usr/local/include/hashmap.h

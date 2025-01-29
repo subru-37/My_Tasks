@@ -1,0 +1,6 @@
+[submodule "mybloomfilter/src/libfilter"]
+	path = mybloomfilter/src/libfilter
+	url = https://github.com/jbapple/libfilter.git
+[submodule "mybloomfilter/src/murmur3"]
+	path = mybloomfilter/src/murmur3
+	url = https://github.com/PeterScott/murmur3

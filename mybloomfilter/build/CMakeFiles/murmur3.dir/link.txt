@@ -1,0 +1,2 @@
+/usr/bin/ar qc libmurmur3.a CMakeFiles/murmur3.dir/src/murmur3/murmur3.c.o
+/usr/bin/ranlib libmurmur3.a
