@@ -7,7 +7,7 @@ find_program(PG_CONFIG_EXECUTABLE NAMES pg_config)
 if(NOT PG_CONFIG_EXECUTABLE)
     message(FATAL_ERROR "pg_config not found! Ensure PostgreSQL is installed and pg_config is in PATH.")
 endif()
-
+set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -g -O0 -Wall -Wextra -fPIC")
 execute_process(COMMAND ${PG_CONFIG_EXECUTABLE} --includedir
                 OUTPUT_VARIABLE PostgreSQL_INCLUDE_DIR
                 OUTPUT_STRIP_TRAILING_WHITESPACE)
@@ -23,14 +23,14 @@ execute_process(COMMAND ${PG_CONFIG_EXECUTABLE} --sharedir
 set(PGSQL_EXTENSION_DIR "${PGSQL_SHARE_DIR}/extension")
 
 include_directories(${PostgreSQL_INCLUDE_DIR})
-include_directories("/home/subru/Documents/postgresql-14.3/src/bin")
-include_directories("/home/subru/Documents/postgresql-14.3/src/include")
-include_directories("/home/subru/Documents/postgresql-14.3/src/include/storage")
-include_directories("/home/subru/Documents/postgresql-14.3/src/include/utils")
-include_directories("/home/subru/Documents/postgresql-14.3/src/test/regress")
+include_directories("/home/subra-pt7817/Downloads/postgresql-17.2/src/bin")
+include_directories("/home/subra-pt7817/Downloads/postgresql-17.2/src/include")
+include_directories("/home/subra-pt7817/Downloads/postgresql-17.2/src/include/storage")
+include_directories("/home/subra-pt7817/Downloads/postgresql-17.2/src/include/utils")
+include_directories("/home/subra-pt7817/Downloads/postgresql-17.2/src/test/regress")
 
-add_library(rocksdb_insertion MODULE rocksdb_insertion.c)
-
+add_library(rocksdb_insertion SHARED rocksdb_insertion.c)
+target_link_libraries(rocksdb_insertion ${PostgreSQL_LIBRARIES})
 set_target_properties(rocksdb_insertion PROPERTIES
     LIBRARY_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/lib"
     PREFIX ""  # Remove default 'lib' prefix

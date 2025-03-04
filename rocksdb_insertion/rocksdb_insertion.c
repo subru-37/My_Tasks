@@ -6,7 +6,9 @@
 
 #define QUERY_STRING_LENGTH 1024
 
-PG_MODULE_MAGIC; 
+#ifdef PG_MODULE_MAGIC
+PG_MODULE_MAGIC;
+#endif
 
 /*
  * typedef struct SPITupleTable {
@@ -24,9 +26,9 @@ PG_MODULE_MAGIC;
  */
 
 typedef struct column_list {
+    struct column_list* next;
     char column_name[NAMEDATALEN]; // char array with longest sequence possible for a column name in postgresql
     char data_type[NAMEDATALEN]; // datatype of the column
-    struct column_list* next;
 }column_list;
 
 
@@ -109,7 +111,7 @@ column_list* valid_columns(char* current_query, char* table_name, char* key_colu
         *validity = false;
     }
     bool isnull = false;
-    int i = 0;
+    uint64 i = 0;
     while(i<SPI_processed){
         Datum column_name_bin = SPI_getbinval(SPI_tuptable->vals[i], SPI_tuptable->tupdesc, 1, &isnull);
         Datum column_type_bin = SPI_getbinval(SPI_tuptable->vals[i], SPI_tuptable->tupdesc, 2, &isnull);
@@ -128,6 +130,7 @@ column_list* valid_columns(char* current_query, char* table_name, char* key_colu
 
 
 Datum metadata_handler(PG_FUNCTION_ARGS){
+    // declaring and initializing required variables
     int connection_status;
     char current_query[QUERY_STRING_LENGTH];
     snprintf(current_query, QUERY_STRING_LENGTH, "CREATE TABLE IF NOT EXISTS metadata (\
@@ -143,15 +146,40 @@ Datum metadata_handler(PG_FUNCTION_ARGS){
         PG_RETURN_NULL();
     }
     // column_metadata* input_data = (column_metadata*)palloc(sizeof(column_metadata));
-    text *input_text = PG_GETARG_TEXT_P(0);
+    text *input_text0 = PG_GETARG_TEXT_P(0);
     char table_name[NAMEDATALEN],key_column_1[NAMEDATALEN], key_column_2[NAMEDATALEN], value_column_1[NAMEDATALEN];
-    strncpy(table_name, text_to_cstring(input_text), NAMEDATALEN);
-    input_text = PG_GETARG_TEXT_P(1);
-    strncpy(key_column_1, text_to_cstring(input_text), NAMEDATALEN);
-    input_text = PG_GETARG_TEXT_P(2);
-    strncpy(key_column_2, text_to_cstring(input_text), NAMEDATALEN);
-    input_text = PG_GETARG_TEXT_P(3);
-    strncpy(value_column_1, text_to_cstring(input_text), NAMEDATALEN);
+    strncpy(table_name, text_to_cstring(input_text0), NAMEDATALEN);
+    text *input_text1 = PG_GETARG_TEXT_P(1);
+    strncpy(key_column_1, text_to_cstring(input_text1), NAMEDATALEN);
+    text *input_text2 = PG_GETARG_TEXT_P(2);
+    strncpy(key_column_2, text_to_cstring(input_text2), NAMEDATALEN);
+    text *input_text3 = PG_GETARG_TEXT_P(3);
+    strncpy(value_column_1, text_to_cstring(input_text3), NAMEDATALEN);
+    /* Corrected text size lengths */
+    text* message0 = cstring_to_text("Table: "); 
+    text* message1 = cstring_to_text(" Key: ");
+    text* message2 = cstring_to_text(" Value: ");
+    text* message3 = cstring_to_text("|");
+
+    /* Calculate actual string lengths without VARHDRSZ */
+    int32 arg0_size = VARSIZE_ANY_EXHDR(message0);
+    int32 arg1_size = VARSIZE_ANY_EXHDR(PG_GETARG_TEXT_P(0));
+    int32 arg2_size = VARSIZE_ANY_EXHDR(message1);
+    int32 arg3_size = VARSIZE_ANY_EXHDR(PG_GETARG_TEXT_P(1));
+    int32 arg4_size = VARSIZE_ANY_EXHDR(message3);
+    int32 arg5_size = VARSIZE_ANY_EXHDR(PG_GETARG_TEXT_P(2));
+    int32 arg6_size = VARSIZE_ANY_EXHDR(message2);
+    int32 arg7_size = VARSIZE_ANY_EXHDR(PG_GETARG_TEXT_P(3));
+
+    /* Correct total size allocation */
+    int32 new_text_size = VARHDRSZ + arg0_size + arg1_size + arg2_size + arg3_size + arg4_size + arg5_size + arg6_size + arg7_size;
+
+    /* Allocate memory for the concatenated result */
+    text *concat_result = (text *) palloc0(new_text_size);
+    SET_VARSIZE(concat_result, new_text_size);
+
+    /* Concatenate data */
+    char *ptr = VARDATA(concat_result);
     if ((connection_status = SPI_connect()) != SPI_OK_CONNECT) {
         elog(ERROR, "SPI_connect failed: error code %d", connection_status);
         PG_RETURN_NULL();
@@ -232,7 +260,25 @@ Datum metadata_handler(PG_FUNCTION_ARGS){
                 temp = temp->next;
             }
             if(!error){
-                elog(NOTICE, "Metadata updation successful for table: '%s'", table_name);
+                memcpy(ptr, VARDATA(message0), arg0_size); ptr += arg0_size;
+                memcpy(ptr, VARDATA(PG_GETARG_TEXT_P(0)), arg1_size); ptr += arg1_size;
+                memcpy(ptr, VARDATA(message1), arg2_size); ptr += arg2_size;
+                memcpy(ptr, VARDATA(PG_GETARG_TEXT_P(1)), arg3_size); ptr += arg3_size;
+                memcpy(ptr, VARDATA(message3), arg4_size); ptr += arg4_size;
+                memcpy(ptr, VARDATA(PG_GETARG_TEXT_P(2)), arg5_size); ptr += arg5_size;
+                memcpy(ptr, VARDATA(message2), arg6_size);ptr += arg6_size;
+                memcpy(ptr, VARDATA(PG_GETARG_TEXT_P(3)), arg7_size);
+
+                /* Clean up SPI connection */
+                if ((connection_status = SPI_finish()) == SPI_OK_FINISH) {
+                    elog(LOG, "SPI Successfully disconnected");
+                } else {
+                    elog(ERROR, "Error disconnecting : error code %d", connection_status);
+                }
+
+                /* Return the concatenated text */
+                PG_RETURN_TEXT_P(concat_result);
+
             }
         }else{
             bool isnull = false;
@@ -296,7 +342,25 @@ Datum metadata_handler(PG_FUNCTION_ARGS){
                 temp = temp->next;
             }
             if(!error){
-                elog(NOTICE, "Metadata updation successful for table: '%s'", table_name);
+                memcpy(ptr, VARDATA(message0), arg0_size); ptr += arg0_size;
+                memcpy(ptr, VARDATA(PG_GETARG_TEXT_P(0)), arg1_size); ptr += arg1_size;
+                memcpy(ptr, VARDATA(message1), arg2_size); ptr += arg2_size;
+                memcpy(ptr, VARDATA(PG_GETARG_TEXT_P(1)), arg3_size); ptr += arg3_size;
+                memcpy(ptr, VARDATA(message3), arg4_size); ptr += arg4_size;
+                memcpy(ptr, VARDATA(PG_GETARG_TEXT_P(2)), arg5_size); ptr += arg5_size;
+                memcpy(ptr, VARDATA(message2), arg6_size);ptr += arg6_size;
+                memcpy(ptr, VARDATA(PG_GETARG_TEXT_P(3)), arg7_size);
+
+                /* Clean up SPI connection */
+                if ((connection_status = SPI_finish()) == SPI_OK_FINISH) {
+                    elog(LOG, "SPI Successfully disconnected");
+                } else {
+                    elog(ERROR, "Error disconnecting : error code %d", connection_status);
+                }
+
+                /* Return the concatenated text */
+                PG_RETURN_TEXT_P(concat_result);
+
             }
         }
     }else{
@@ -311,7 +375,7 @@ Datum metadata_handler(PG_FUNCTION_ARGS){
     PG_RETURN_NULL();
 }
 
-PGDLLEXPORT PG_FUNCTION_INFO_V1(metadata_handler);
+PG_FUNCTION_INFO_V1(metadata_handler);
 
 void _PG_init(void){
 
