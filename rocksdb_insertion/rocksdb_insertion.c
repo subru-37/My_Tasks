@@ -3,6 +3,7 @@
 #include "executor/spi.h"
 #include "utils/elog.h"
 #include "utils/builtins.h" // text_to_cstring
+#include "funcapi.h"
 
 #define QUERY_STRING_LENGTH 1024
 
@@ -155,31 +156,12 @@ Datum metadata_handler(PG_FUNCTION_ARGS){
     strncpy(key_column_2, text_to_cstring(input_text2), NAMEDATALEN);
     text *input_text3 = PG_GETARG_TEXT_P(3);
     strncpy(value_column_1, text_to_cstring(input_text3), NAMEDATALEN);
-    /* Corrected text size lengths */
-    text* message0 = cstring_to_text("Table: "); 
-    text* message1 = cstring_to_text(" Key: ");
-    text* message2 = cstring_to_text(" Value: ");
-    text* message3 = cstring_to_text("|");
 
-    /* Calculate actual string lengths without VARHDRSZ */
-    int32 arg0_size = VARSIZE_ANY_EXHDR(message0);
-    int32 arg1_size = VARSIZE_ANY_EXHDR(PG_GETARG_TEXT_P(0));
-    int32 arg2_size = VARSIZE_ANY_EXHDR(message1);
-    int32 arg3_size = VARSIZE_ANY_EXHDR(PG_GETARG_TEXT_P(1));
-    int32 arg4_size = VARSIZE_ANY_EXHDR(message3);
-    int32 arg5_size = VARSIZE_ANY_EXHDR(PG_GETARG_TEXT_P(2));
-    int32 arg6_size = VARSIZE_ANY_EXHDR(message2);
-    int32 arg7_size = VARSIZE_ANY_EXHDR(PG_GETARG_TEXT_P(3));
+    TupleDesc tupdesc;
+    HeapTuple tuple;
+    Datum values[3];
+    bool nulls[3] = {false, false, false};
 
-    /* Correct total size allocation */
-    int32 new_text_size = VARHDRSZ + arg0_size + arg1_size + arg2_size + arg3_size + arg4_size + arg5_size + arg6_size + arg7_size;
-
-    /* Allocate memory for the concatenated result */
-    text *concat_result = (text *) palloc0(new_text_size);
-    SET_VARSIZE(concat_result, new_text_size);
-
-    /* Concatenate data */
-    char *ptr = VARDATA(concat_result);
     if ((connection_status = SPI_connect()) != SPI_OK_CONNECT) {
         elog(ERROR, "SPI_connect failed: error code %d", connection_status);
         PG_RETURN_NULL();
@@ -260,15 +242,6 @@ Datum metadata_handler(PG_FUNCTION_ARGS){
                 temp = temp->next;
             }
             if(!error){
-                memcpy(ptr, VARDATA(message0), arg0_size); ptr += arg0_size;
-                memcpy(ptr, VARDATA(PG_GETARG_TEXT_P(0)), arg1_size); ptr += arg1_size;
-                memcpy(ptr, VARDATA(message1), arg2_size); ptr += arg2_size;
-                memcpy(ptr, VARDATA(PG_GETARG_TEXT_P(1)), arg3_size); ptr += arg3_size;
-                memcpy(ptr, VARDATA(message3), arg4_size); ptr += arg4_size;
-                memcpy(ptr, VARDATA(PG_GETARG_TEXT_P(2)), arg5_size); ptr += arg5_size;
-                memcpy(ptr, VARDATA(message2), arg6_size);ptr += arg6_size;
-                memcpy(ptr, VARDATA(PG_GETARG_TEXT_P(3)), arg7_size);
-
                 /* Clean up SPI connection */
                 if ((connection_status = SPI_finish()) == SPI_OK_FINISH) {
                     elog(LOG, "SPI Successfully disconnected");
@@ -277,7 +250,23 @@ Datum metadata_handler(PG_FUNCTION_ARGS){
                 }
 
                 /* Return the concatenated text */
-                PG_RETURN_TEXT_P(concat_result);
+                int key_size = VARSIZE_ANY_EXHDR(input_text1) + VARSIZE_ANY_EXHDR(input_text2) + 2;
+                text *key_combined = (text *) palloc0(VARHDRSZ + key_size);
+                SET_VARSIZE(key_combined, VARHDRSZ + key_size);
+                snprintf(VARDATA(key_combined), key_size, "%s|%s", text_to_cstring(input_text1), text_to_cstring(input_text2));
+
+                if (get_call_result_type(fcinfo, NULL, &tupdesc) != TYPEFUNC_COMPOSITE)
+                    elog(ERROR, "Type function must be declared to return a composite type");
+
+                /* Set values */
+                values[0] = PointerGetDatum(input_text0);  // Table name
+                values[1] = PointerGetDatum(key_combined);  // Key1|Key2
+                values[2] = PointerGetDatum(input_text3);  // Value
+
+                /* Build the tuple */
+                tuple = heap_form_tuple(tupdesc, values, nulls);
+                elog(NOTICE, "Metadata successfully updated");
+                PG_RETURN_DATUM(HeapTupleGetDatum(tuple));
 
             }
         }else{
@@ -342,25 +331,30 @@ Datum metadata_handler(PG_FUNCTION_ARGS){
                 temp = temp->next;
             }
             if(!error){
-                memcpy(ptr, VARDATA(message0), arg0_size); ptr += arg0_size;
-                memcpy(ptr, VARDATA(PG_GETARG_TEXT_P(0)), arg1_size); ptr += arg1_size;
-                memcpy(ptr, VARDATA(message1), arg2_size); ptr += arg2_size;
-                memcpy(ptr, VARDATA(PG_GETARG_TEXT_P(1)), arg3_size); ptr += arg3_size;
-                memcpy(ptr, VARDATA(message3), arg4_size); ptr += arg4_size;
-                memcpy(ptr, VARDATA(PG_GETARG_TEXT_P(2)), arg5_size); ptr += arg5_size;
-                memcpy(ptr, VARDATA(message2), arg6_size);ptr += arg6_size;
-                memcpy(ptr, VARDATA(PG_GETARG_TEXT_P(3)), arg7_size);
-
                 /* Clean up SPI connection */
                 if ((connection_status = SPI_finish()) == SPI_OK_FINISH) {
                     elog(LOG, "SPI Successfully disconnected");
                 } else {
                     elog(ERROR, "Error disconnecting : error code %d", connection_status);
                 }
+                int key_size = VARSIZE_ANY_EXHDR(input_text1) + VARSIZE_ANY_EXHDR(input_text2) + 2;
+                text *key_combined = (text *) palloc0(VARHDRSZ + key_size);
+                SET_VARSIZE(key_combined, VARHDRSZ + key_size);
+                snprintf(VARDATA(key_combined), key_size, "%s|%s", text_to_cstring(input_text1), text_to_cstring(input_text2));
 
+                if (get_call_result_type(fcinfo, NULL, &tupdesc) != TYPEFUNC_COMPOSITE)
+                    elog(ERROR, "Type function must be declared to return a composite type");
+
+                /* Set values */
+                values[0] = PointerGetDatum(input_text0);  // Table name
+                values[1] = PointerGetDatum(key_combined);  // Key1|Key2
+                values[2] = PointerGetDatum(input_text3);  // Value
+
+                /* Build the tuple */
+                tuple = heap_form_tuple(tupdesc, values, nulls);
                 /* Return the concatenated text */
-                PG_RETURN_TEXT_P(concat_result);
-
+                elog(NOTICE, "Metadata successfully inserted");
+                PG_RETURN_DATUM(HeapTupleGetDatum(tuple));
             }
         }
     }else{

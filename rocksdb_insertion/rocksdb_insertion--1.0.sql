@@ -1,4 +1,6 @@
-CREATE OR REPLACE TYPE metadata_result AS (
+DROP TYPE IF EXISTS metadata_result CASCADE;
+
+CREATE TYPE metadata_result AS (
     table_name TEXT,
     key TEXT,
     value TEXT
