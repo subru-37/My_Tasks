@@ -1,0 +1,5 @@
+CREATE OR REPLACE FUNCTION compute_factorial(input INT) RETURNS NUMERIC AS
+    'MODULE_PATHNAME', 'compute_factorial'
+LANGUAGE C STRICT;
+-- STRICT
+

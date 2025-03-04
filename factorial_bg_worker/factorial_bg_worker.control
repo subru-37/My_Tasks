@@ -1,0 +1,4 @@
+module_pathname = '$libdir/factorial_bg_worker'
+relocatable = true
+default_version = '1.0'
+comment = 'Extension to calculate factorials using background worker'

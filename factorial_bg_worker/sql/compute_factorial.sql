@@ -1,0 +1,9 @@
+SELECT compute_factorial(0);
+SELECT compute_factorial(1);
+SELECT compute_factorial(5);
+SELECT compute_factorial(10);
+SELECT compute_factorial(20);
+SELECT compute_factorial(21);  
+SELECT compute_factorial(-1);  
+SELECT compute_factorial(100); 
+SELECT compute_factorial(50); 

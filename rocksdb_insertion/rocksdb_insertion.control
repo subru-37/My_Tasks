@@ -1,0 +1,4 @@
+module_pathname = '$libdir/rocksdb_insertion'
+relocatable = true
+default_version = '1.0'
+comment = 'Extension to load data into rocksdb using metadata and copy commands'

@@ -1,0 +1,38 @@
+SELECT compute_factorial(0);
+ compute_factorial 
+-------------------
+                 1
+(1 row)
+
+SELECT compute_factorial(1);
+ compute_factorial 
+-------------------
+                 1
+(1 row)
+
+SELECT compute_factorial(5);
+ compute_factorial 
+-------------------
+               120
+(1 row)
+
+SELECT compute_factorial(10);
+ compute_factorial 
+-------------------
+           3628800
+(1 row)
+
+SELECT compute_factorial(20);
+  compute_factorial  
+---------------------
+ 2432902008176640000
+(1 row)
+
+SELECT compute_factorial(21);  
+ERROR:  Integer overflow
+SELECT compute_factorial(-1);  
+ERROR:  Negative numbers are not allowed
+SELECT compute_factorial(100); 
+ERROR:  Integer overflow
+SELECT compute_factorial(50); 
+ERROR:  Integer overflow
