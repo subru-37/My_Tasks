@@ -10,8 +10,14 @@
 #include "stdlib.h"
 #include <uuid/uuid.h>
 #include <time.h>
+#include "storage/proc.h" // data structures for each process's shared memory (latches and all)
+#include "storage/lwlock.h"
 
 #define QUERY_STRING_LENGTH 1024
+#define QUEUE_LOCK_TRANCHE "MyQueueLock"
+#define QUEUE_STRUCT "QueueStruct"
+#define MAX_QUEUE_SIZE 100
+
 
 #ifdef PG_MODULE_MAGIC
 PG_MODULE_MAGIC;
@@ -32,31 +38,109 @@ PG_MODULE_MAGIC;
  * } SPITupleTable;
  */
 
+typedef enum column_type{
+    UNDEFINED,
+    KEY1,
+    KEY2,
+    VALUE
+}column_type;
+
 typedef struct column_list {
     struct column_list* next;
     char column_name[NAMEDATALEN]; // char array with longest sequence possible for a column name in postgresql
     char data_type[NAMEDATALEN]; // datatype of the column
+    column_type type;
+    char table_name[NAMEDATALEN];
 }column_list;
-
-// static shmem_startup_hook_type prev_shmem_startup_hook = NULL; // hook for initializing shared memory
-static ProcessUtility_hook_type prev_process_utility_hook = NULL;
 
 typedef enum copy_type {
     COPY_FROM,
     COPY_TO
 }copy_type;
 
-typedef struct copy_properties{
+// Define copy_properties structure
+typedef struct {
     char table_name[NAMEDATALEN];
     char csv_location[1024];
     char delimiter[NAMEDATALEN];
     bool has_header;
-}copy_properties;
+    int next;
+} copy_properties;
 
-column_list* add_column(char* name, char* type,column_list* HEAD ){
+// Define queue structure
+typedef struct {
+    copy_properties queue[MAX_QUEUE_SIZE];
+    int head, tail, free_index;  
+    LWLock *lock;
+} Queue;
+
+static Queue *shared_queue = NULL; // global struct pointer to shared memory
+static shmem_startup_hook_type prev_shmem_startup_hook = NULL; // hook for initializing shared memory
+static ProcessUtility_hook_type prev_process_utility_hook = NULL;
+
+// Initialize the queue
+void initQueue(Queue* q) {
+    // q->front = q->rear = NULL;
+    q->head = -1;
+    q->tail = -1;
+    q->free_index = 0;
+}
+
+// Check if the queue is empty
+int isEmpty(Queue* q) {
+    return q->head == -1;
+}
+
+// Enqueue operation
+void enqueue(copy_properties* node) {    
+    LWLockAcquire(shared_queue->lock, LW_EXCLUSIVE);
+    if (shared_queue->free_index >= MAX_QUEUE_SIZE){
+        elog(NOTICE, "Queue is full, waiting");
+        return;
+    }
+    int new_node_index = shared_queue->free_index++;
+    // Fill node data
+    snprintf(shared_queue->queue[new_node_index].table_name, NAMEDATALEN, "%s", node->table_name);
+    snprintf(shared_queue->queue[new_node_index].csv_location, 1024, "%s", node->csv_location);
+    snprintf(shared_queue->queue[new_node_index].delimiter, NAMEDATALEN, "%s", node->delimiter);
+    shared_queue->queue[new_node_index].has_header = node->has_header;
+    shared_queue->queue[new_node_index].next = -1;
+    // printf("Inserted: %d\n", value);
+
+    // insertion of new queue
+    if (shared_queue->tail != -1) {
+        shared_queue->queue[shared_queue->tail].next = new_node_index;
+    }
+    shared_queue->tail = new_node_index;
+
+    //if the queue is empty
+    if (shared_queue->head == -1) {
+        shared_queue->head = new_node_index;
+    }
+    LWLockRelease(shared_queue->lock);
+}
+
+void dequeue() {
+    LWLockAcquire(shared_queue->lock, LW_EXCLUSIVE);
+    if (shared_queue->head == -1) {
+        elog(LOG, "Queue is empty!\n");
+        return;
+    }
+    int remove_index = shared_queue->head;
+    shared_queue->head = shared_queue->queue[remove_index].next;
+
+    if (shared_queue->head == -1) {
+        shared_queue->tail = -1;  // Queue is empty now
+    }
+    LWLockRelease(shared_queue->lock);
+}
+
+column_list* add_column(char* name, char* data_type, column_type type, char* table_name, column_list* HEAD ){
     column_list* node = (column_list*)palloc(sizeof(column_list));
     strncpy(node->column_name, name, NAMEDATALEN);
-    strncpy(node->data_type, type, NAMEDATALEN);
+    strncpy(node->data_type, data_type, NAMEDATALEN);
+    strncpy(node->table_name, table_name, NAMEDATALEN);
+    node->type = type;
     node->next = HEAD;
     HEAD = node;
     return node;
@@ -81,12 +165,15 @@ bool search_columns(char* table_name, char* key_column_1, char* key_column_2, ch
     while(temp!=NULL){
         if(strncmp(key_column_1, temp->column_name, NAMEDATALEN) == 0){
             flag1 = true;
+            temp->type = KEY1;
         }
         if(strncmp(key_column_2, temp->column_name, NAMEDATALEN) == 0){
             flag2 = true;
+            temp->type = KEY2;
         }
         if(strncmp(value_column_1, temp->column_name, NAMEDATALEN) == 0){
             flag3 = true;
+            temp->type = VALUE;
         }
         temp = temp->next;
     }
@@ -137,8 +224,8 @@ column_list* valid_columns(char* current_query, char* table_name, char* key_colu
         Datum column_name_bin = SPI_getbinval(SPI_tuptable->vals[i], SPI_tuptable->tupdesc, 1, &isnull);
         Datum column_type_bin = SPI_getbinval(SPI_tuptable->vals[i], SPI_tuptable->tupdesc, 2, &isnull);
         char *name = DatumGetCString(column_name_bin);
-        char *type = DatumGetCString(column_type_bin);
-        HEAD = add_column(name, type, HEAD);
+        char *data_type = DatumGetCString(column_type_bin);
+        HEAD = add_column(name, data_type, UNDEFINED, table_name, HEAD);
         elog(LOG, "column detected: %s", HEAD->column_name);
         i++;
     }
@@ -158,13 +245,6 @@ Datum metadata_handler(PG_FUNCTION_ARGS){
     // declaring and initializing required variables
     int connection_status;
     char current_query[QUERY_STRING_LENGTH];
-    snprintf(current_query, QUERY_STRING_LENGTH, "CREATE TABLE IF NOT EXISTS metadata (\
-        id UUID DEFAULT gen_random_uuid() PRIMARY KEY NOT NULL,\
-        table_oid BIGINT NOT NULL,\
-        table_name TEXT NOT NULL,\
-        column_name TEXT NOT NULL,\
-        data_type TEXT NOT NULL, \
-        key_or_value TEXT NOT NULL, UNIQUE(table_name, column_name))");
     int result;
     if (PG_ARGISNULL(0) || PG_ARGISNULL(1) || PG_ARGISNULL(2) || PG_ARGISNULL(3)) {
         elog(ERROR, "NULL input is not allowed");
@@ -190,12 +270,7 @@ Datum metadata_handler(PG_FUNCTION_ARGS){
         elog(ERROR, "SPI_connect failed: error code %d", connection_status);
         PG_RETURN_NULL();
     }
-    result = SPI_execute(current_query, false, 0);
-    if(result != SPI_OK_UTILITY){
-        elog(ERROR, "Metadata table creation error: %d", result);
-        PG_RETURN_NULL();
-    }
-    elog(LOG, "Verified creation og metadata table");
+    elog(LOG, "SPI Successfully Connected");
     bool validity = false;
     int len;
     column_list* HEAD = valid_columns(current_query, table_name, key_column_1, key_column_2, value_column_1, &validity, &len, true);
@@ -396,18 +471,18 @@ Datum metadata_handler(PG_FUNCTION_ARGS){
 
 PG_FUNCTION_INFO_V1(metadata_handler);
 
-// void generate_uuid(char *uuid) {
-//     uuid_t binuuid;
-//     uuid_generate_random(binuuid);
+void generate_uuid(char *uuid) {
+    uuid_t binuuid;
+    uuid_generate_random(binuuid);
 
-// #ifdef capitaluuid
-//     uuid_unparse_upper(binuuid, uuid);
-// #elif lowercaseuuid
-//     uuid_unparse_lower(binuuid, uuid);
-// #else
-//     uuid_unparse(binuuid, uuid);
-// #endif
-// }
+#ifdef capitaluuid
+    uuid_unparse_upper(binuuid, uuid);
+#elif lowercaseuuid
+    uuid_unparse_lower(binuuid, uuid);
+#else
+    uuid_unparse(binuuid, uuid);
+#endif
+}
 void generate_unique_random_numbers(int n, int count, int result[]) {
     if (count > n) {
         elog(ERROR, "Error: Cannot generate more unique numbers than the range. Need atleast 3 columns.\n");
@@ -432,12 +507,15 @@ bool write_to_file(copy_properties* properties){
     int connection_status;
     int result;
     char current_query[QUERY_STRING_LENGTH];
-    snprintf(current_query, QUERY_STRING_LENGTH, "SELECT * FROM metadata WHERE table_name = '%s'", properties->table_name);
+    snprintf(current_query, QUERY_STRING_LENGTH, "SELECT * FROM metadata WHERE table_name = '%s' ORDER BY key_or_value", properties->table_name);
     if ((connection_status = SPI_connect()) != SPI_OK_CONNECT) {
         elog(ERROR, "SPI_connect failed: error code %d", connection_status);
         return false;
     }
     result = SPI_execute(current_query, false, 0);
+    column_list* HEAD = NULL;
+    column_list* selected_head = NULL;
+    char key_column_1[NAMEDATALEN], key_column_2[NAMEDATALEN], value_column_1[NAMEDATALEN];
     if(result != SPI_OK_SELECT || SPI_processed<=0){
         // metadata not found or errored case
         elog(WARNING_CLIENT_ONLY, "Metadata not found for table: %s", properties->table_name);
@@ -450,7 +528,7 @@ bool write_to_file(copy_properties* properties){
         char* temp3 = "temp3";
         bool valid;
         int len;
-        column_list* HEAD = valid_columns(current_query, properties->table_name, temp1, temp2, temp3, &valid, &len, false);
+        HEAD = valid_columns(current_query, properties->table_name, temp1, temp2, temp3, &valid, &len, false);
         int random_columns[3];
         generate_unique_random_numbers(len, 3, random_columns);
         generate_unique_random_numbers(len, 3, random_columns);
@@ -483,12 +561,12 @@ bool write_to_file(copy_properties* properties){
         column_list* temp = HEAD;
         bool error = false;
         int i = 0;
-        char key_column_1[NAMEDATALEN], key_column_2[NAMEDATALEN], value_column_1[NAMEDATALEN];
         elog(NOTICE, "Column numbers are %d, %d, %d, length: %d", random_columns[0], random_columns[1], random_columns[2], len);
-        SPI_execute("BEGIN;", false, 0);
         while(temp!=NULL){
             if(i == random_columns[0]){
                 strncpy(key_column_1, temp->column_name, NAMEDATALEN);
+                selected_head = add_column(temp->column_name,temp->data_type, KEY1, properties->table_name, HEAD);
+                temp->type = KEY1;
                 snprintf(current_query, QUERY_STRING_LENGTH, "INSERT INTO metadata(table_oid, table_name, column_name,\
                     data_type, key_or_value) VALUES(%d, '%s', '%s', '%s', 'KEY1')", 
                     table_oid, properties->table_name, temp->column_name, temp->data_type);
@@ -501,6 +579,8 @@ bool write_to_file(copy_properties* properties){
             }
             if(i == random_columns[1]){
                 strncpy(key_column_2, temp->column_name, NAMEDATALEN);
+                selected_head = add_column(temp->column_name,temp->data_type, KEY2, properties->table_name, HEAD);
+                temp->type = KEY2;
                 snprintf(current_query, QUERY_STRING_LENGTH, "INSERT INTO metadata(table_oid, table_name, column_name,\
                     data_type, key_or_value) VALUES(%d, '%s', '%s', '%s', 'KEY2')", 
                     table_oid, properties->table_name, temp->column_name, temp->data_type);
@@ -513,6 +593,8 @@ bool write_to_file(copy_properties* properties){
             }
             if(i == random_columns[2]){
                 strncpy(value_column_1, temp->column_name, NAMEDATALEN);
+                selected_head = add_column(temp->column_name,temp->data_type, VALUE, properties->table_name, HEAD);
+                temp->type = VALUE;
                 snprintf(current_query, QUERY_STRING_LENGTH, "INSERT INTO metadata(table_oid, table_name, column_name,\
                     data_type, key_or_value) VALUES(%d, '%s', '%s', '%s', 'VALUE')", 
                     table_oid, properties->table_name, temp->column_name, temp->data_type);
@@ -526,23 +608,58 @@ bool write_to_file(copy_properties* properties){
             i++;
             temp = temp->next;
         }
+
         if(error){
             elog(NOTICE, "Try again!!");
-        }else{
-            SPI_execute("COMMIT;", false, 0);
+        }        
+        elog(NOTICE, "Choosen columns: %s|%s for KEY and %s for VALUE", key_column_1, key_column_2, value_column_1);
+    }else{
+        uint64 i = 0; 
+        while(i<SPI_processed && i<3){
+            char *table_name = SPI_getvalue(SPI_tuptable->vals[i], SPI_tuptable->tupdesc, 3);
+            char *column_name = SPI_getvalue(SPI_tuptable->vals[i], SPI_tuptable->tupdesc, 4);
+            char *data_type = SPI_getvalue(SPI_tuptable->vals[i], SPI_tuptable->tupdesc, 5);
+            char *type = SPI_getvalue(SPI_tuptable->vals[i], SPI_tuptable->tupdesc, 6);
+
+            if (!table_name || !column_name || !data_type || !type) {
+                elog(LOG, "NULL value encountered, skipping row %lu", i);
+                continue;
+            }
+
+            if(strcmp(type, "KEY1") == 0){
+                strncpy(key_column_1, column_name, NAMEDATALEN);
+                selected_head = add_column(column_name, data_type, KEY1, table_name,selected_head);
+            }else if(strcmp(type, "KEY2") == 0){
+                strncpy(key_column_2, column_name, NAMEDATALEN);
+                selected_head = add_column(column_name, data_type, KEY2, table_name,selected_head);
+            }else{
+                strncpy(value_column_1, column_name, NAMEDATALEN);
+                selected_head = add_column(column_name, data_type, VALUE, table_name,selected_head);
+            }
+            i++;
         }
-        
-        elog(NOTICE, "Choosen column numbers: %s|%s for KEY and %s for VALUE", key_column_1, key_column_2, value_column_1);
     }
     // FILE *file;
     // char buffer[4096]; // one line buffer
-    // char uuid[UUID_STR_LEN];
-    // generate_uuid(uuid);  // Generate a new UUID
-    // char filename[UUID_STR_LEN + 4];  // ".csv" needs 4 extra bytes
-    // snprintf(filename, sizeof(filename), "%s.csv", uuid);
+    char uuid[UUID_STR_LEN];
+    generate_uuid(uuid);  // Generate a new UUID
+    char filename[UUID_STR_LEN + 9];  // ".csv" needs 4 extra bytes
+    snprintf(filename, sizeof(filename), "/tmp/%s.csv", uuid);
 
-    // elog(NOTICE, "Generated file: %s\n", filename);
+    elog(NOTICE, "Generated file: %s\n", filename);
+    column_list* temp = selected_head;
+    int i = 0;
+    while(temp!=NULL && i<3){
+        elog(LOG, "%s|%s|%s|%d", temp->table_name, temp->column_name, temp->data_type, temp->type);
+        temp = temp->next;
+        i++;
+    }
+
     // FILE *file = fopen(filename, "w");
+    // if (file == NULL) {
+    //     elog(FATAL, "File not opened, Tip: check permission for location /tmp");
+    // }
+    // snprintf()
     if((connection_status = SPI_finish()) == SPI_OK_FINISH){
         elog(LOG, "SPI Successfully disconnected");
     }else{
@@ -603,10 +720,30 @@ void file_writer_for_rocksdb(PlannedStmt *pstmt, const char *queryString, bool r
     }
 }
 
+static void queue_shmem_startup(){
+    // RequestAddinShmemSpace(sizeof(Queue));
+    // RequestNamedLWLockTranche(QUEUE_LOCK_TRANCHE, 1);
+    bool found;
+    LWLockAcquire(AddinShmemInitLock, LW_EXCLUSIVE);
+    shared_queue = (Queue*)ShmemInitStruct(QUEUE_STRUCT, sizeof(Queue), &found);
+    if (!shared_queue) {
+        elog(ERROR, "Failed to allocate shared memory");
+    }
+    if (!found) {
+        initQueue(shared_queue);
+    }
+    LWLockRelease(AddinShmemInitLock);
+    if (prev_shmem_startup_hook)
+        prev_shmem_startup_hook();
+}
+
 void _PG_init(void){
+
     prev_process_utility_hook = ProcessUtility_hook;
     ProcessUtility_hook = file_writer_for_rocksdb;
 
+    prev_shmem_startup_hook = shmem_startup_hook;
+    shmem_startup_hook = queue_shmem_startup;
 }
 
 void _PG_fini(void){
