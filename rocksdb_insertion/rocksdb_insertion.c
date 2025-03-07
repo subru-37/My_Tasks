@@ -59,19 +59,6 @@ typedef struct column_list {
     char table_name[NAMEDATALEN]; // table name for reference
 }column_list;
 
-// typedef enum copy_type {
-//     COPY_FROM,
-//     COPY_TO
-// }copy_type;
-
-typedef struct kv_data{
-    // char* key1, key2, value;
-    char key1[TOKEN_LENGTH];
-    char key2[TOKEN_LENGTH];
-    char value[TOKEN_LENGTH];
-    struct kv_data* next;
-}kv_data;
-
 // Define copy_properties structure
 typedef struct {
     char table_name[NAMEDATALEN]; // table name for reference
@@ -82,6 +69,7 @@ typedef struct {
     char key1_column[NAMEDATALEN]; // 0 indexed column number indicating key1 from csv file 
     char key2_column[NAMEDATALEN]; // 0 indexed column number indicating key2 from csv file 
     char value_column[NAMEDATALEN]; // 0 indexed column number indicating value from csv file 
+    int table_oid;
 } copy_properties;
 
 // queue structure
@@ -606,28 +594,39 @@ void read_write_csv(const char *read_filename, const char* write_filename, copy_
         temp = temp->next;
         i++;
     }
-    
+    int row = 0;
     while (fgets(line, MAX_LINE_LENGTH, read_file)) {
         char *token;
         char *rest = line;
         char key1[TOKEN_LENGTH] = {0};
         char key2[TOKEN_LENGTH] = {0};
         char value[TOKEN_LENGTH] = {0};
-        // int row = 0;
+        size_t key1len;
+        size_t key2len;
+        size_t valuelen;
         int i = 0;
         while ((token = strsep(&rest, properties->delimiter)) != NULL) {
             if (*token == '\0') continue;  // Skip empty tokens
             strip_newline(token);
             if(i == key1_column_no){
+                key1len = strlen(token);
                 strncpy(key1, token, TOKEN_LENGTH);
             }else if(i == key2_column_no){
+                key2len = strlen(token);
                 strncpy(key2, token, TOKEN_LENGTH);
             }else if(i == value_column_no){
-                strncpy(value, token, TOKEN_LENGTH);
+                strncpy(value, token, TOKEN_LENGTH);               
+                valuelen = strlen(token);
             }
             i++;
         }
-        fprintf(write_file, "%s,%s,%s\n", key1, key2, value);
+        if(row == 0){
+            fprintf(write_file, "table_oid,col1len,%s,col2len,%s,col3len,%s\n",key1, key2, value);
+        }else{
+            fprintf(write_file, "%d,%lu,%s,%lu,%s,%lu,%s\n", properties->table_oid, key1len, key1, key2len, key2, valuelen, value);
+        }
+
+        row++;
     }
     fclose(write_file);
     fclose(read_file);
@@ -651,11 +650,35 @@ bool write_to_file(copy_properties* properties){
     bool valid;
     int len;
     column_list* HEAD = valid_columns(properties->table_name, temp1, temp2, temp3, &valid, &len, false);
-    snprintf(current_query, QUERY_STRING_LENGTH, "SELECT * FROM metadata WHERE table_name = '%s' ORDER BY key_or_value", properties->table_name);
-    
-    result = SPI_execute(current_query, false, 0);
     // column_list* selected_head = NULL;
     char key_column_1[NAMEDATALEN], key_column_2[NAMEDATALEN], value_column_1[NAMEDATALEN];
+    
+    //collecting schema information for oid
+    bool isnull;
+    snprintf(current_query, QUERY_STRING_LENGTH, "SELECT table_schema FROM information_schema.tables WHERE table_name = '%s'", properties->table_name);
+    result = SPI_execute(current_query, true, 0);
+    if(SPI_processed<=0 || (result != SPI_OK_SELECT)){
+        elog(ERROR, "Can't access current schema");
+        // PG_RETURN_NULL();
+        return false;
+    }
+    Datum schema_bin = SPI_getbinval(SPI_tuptable->vals[0], SPI_tuptable->tupdesc,1,&isnull);
+    char* schema = DatumGetCString(schema_bin);
+
+    //collecting oid from schema information
+    snprintf(current_query, QUERY_STRING_LENGTH, "SELECT oid FROM pg_class WHERE relname = '%s'\
+        AND relnamespace = '%s'::regnamespace", properties->table_name, schema);
+    result = SPI_execute(current_query, true, 0);
+    if(SPI_processed<=0 || result!= SPI_OK_SELECT){
+        elog(ERROR, "Can't get table OID");
+        return false;
+    }
+    Datum table_oid_bin = SPI_getbinval(SPI_tuptable->vals[0], SPI_tuptable->tupdesc, 1, &isnull);
+    int table_oid = DatumGetInt32(table_oid_bin);
+    properties->table_oid = table_oid;
+    
+    snprintf(current_query, QUERY_STRING_LENGTH, "SELECT * FROM metadata WHERE table_name = '%s' ORDER BY key_or_value", properties->table_name);
+    result = SPI_execute(current_query, false, 0);
     
     if(result != SPI_OK_SELECT || SPI_processed<=0){
         // metadata not found or errored case
@@ -666,29 +689,6 @@ bool write_to_file(copy_properties* properties){
         generate_unique_random_numbers(len, 3, random_columns);
         generate_unique_random_numbers(len, 3, random_columns);
         generate_unique_random_numbers(len, 3, random_columns);
-        
-        //collecting schema information for oid
-        bool isnull;
-        snprintf(current_query, QUERY_STRING_LENGTH, "SELECT table_schema FROM information_schema.tables WHERE table_name = '%s'", properties->table_name);
-        result = SPI_execute(current_query, true, 0);
-        if(SPI_processed<=0 || (result != SPI_OK_SELECT)){
-            elog(ERROR, "Can't access current schema");
-            // PG_RETURN_NULL();
-            return false;
-        }
-        Datum schema_bin = SPI_getbinval(SPI_tuptable->vals[0], SPI_tuptable->tupdesc,1,&isnull);
-        char* schema = DatumGetCString(schema_bin);
-
-        //collecting oid from schema information
-        snprintf(current_query, QUERY_STRING_LENGTH, "SELECT oid FROM pg_class WHERE relname = '%s'\
-            AND relnamespace = '%s'::regnamespace", properties->table_name, schema);
-        result = SPI_execute(current_query, true, 0);
-        if(SPI_processed<=0 || result!= SPI_OK_SELECT){
-            elog(ERROR, "Can't get table OID");
-            return false;
-        }
-        Datum table_oid_bin = SPI_getbinval(SPI_tuptable->vals[0], SPI_tuptable->tupdesc, 1, &isnull);
-        int table_oid = DatumGetInt32(table_oid_bin);
         
         // start iteration to save metadata information
         column_list* temp = HEAD;
@@ -756,6 +756,7 @@ bool write_to_file(copy_properties* properties){
 
             if (!table_name || !column_name || !data_type || !type) {
                 elog(LOG, "NULL value encountered, skipping row %lu", i);
+                i++;
                 continue;
             }
 
