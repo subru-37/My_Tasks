@@ -1,3 +1,4 @@
+#define _GNU_SOURCE
 #include "postgres.h" // core psql headers
 #include "fmgr.h" // definitions for postgresql function manager and function call interface
 #include "executor/spi.h"
@@ -12,17 +13,20 @@
 #include <time.h>
 #include "storage/proc.h" // data structures for each process's shared memory (latches and all)
 #include "storage/lwlock.h"
+#include "string.h"
 
 #define QUERY_STRING_LENGTH 1024
 #define QUEUE_LOCK_TRANCHE "MyQueueLock"
 #define QUEUE_STRUCT "QueueStruct"
 #define MAX_QUEUE_SIZE 100
-
+#define MAX_LINE_LENGTH 4096  // Maximum length for a line in CSV
+#define TOKEN_LENGTH 256
 
 #ifdef PG_MODULE_MAGIC
 PG_MODULE_MAGIC;
 #endif
 
+// sample struct where the data is stored after a select statement
 /*
  * typedef struct SPITupleTable {
  *   // Public members 
@@ -38,6 +42,8 @@ PG_MODULE_MAGIC;
  * } SPITupleTable;
  */
 
+
+// structures and enums for various purposes
 typedef enum column_type{
     UNDEFINED,
     KEY1,
@@ -46,39 +52,50 @@ typedef enum column_type{
 }column_type;
 
 typedef struct column_list {
-    struct column_list* next;
+    struct column_list* next; // pointer to the next element in linked list
     char column_name[NAMEDATALEN]; // char array with longest sequence possible for a column name in postgresql
     char data_type[NAMEDATALEN]; // datatype of the column
-    column_type type;
-    char table_name[NAMEDATALEN];
+    column_type type; // column type 'key1/key2/value'
+    char table_name[NAMEDATALEN]; // table name for reference
 }column_list;
 
-typedef enum copy_type {
-    COPY_FROM,
-    COPY_TO
-}copy_type;
+// typedef enum copy_type {
+//     COPY_FROM,
+//     COPY_TO
+// }copy_type;
+
+typedef struct kv_data{
+    // char* key1, key2, value;
+    char key1[TOKEN_LENGTH];
+    char key2[TOKEN_LENGTH];
+    char value[TOKEN_LENGTH];
+    struct kv_data* next;
+}kv_data;
 
 // Define copy_properties structure
 typedef struct {
-    char table_name[NAMEDATALEN];
-    char csv_location[1024];
-    char delimiter[NAMEDATALEN];
-    bool has_header;
-    int next;
+    char table_name[NAMEDATALEN]; // table name for reference
+    char csv_location[1024]; // location of csv file
+    char delimiter[NAMEDATALEN]; // type of delimiter inside the csv file
+    bool has_header; // whether the csv file includes header information
+    int next; // index of next element in the queue
+    char key1_column[NAMEDATALEN]; // 0 indexed column number indicating key1 from csv file 
+    char key2_column[NAMEDATALEN]; // 0 indexed column number indicating key2 from csv file 
+    char value_column[NAMEDATALEN]; // 0 indexed column number indicating value from csv file 
 } copy_properties;
 
-// Define queue structure
+// queue structure
 typedef struct {
     copy_properties queue[MAX_QUEUE_SIZE];
     int head, tail, free_index;  
     LWLock *lock;
 } Queue;
 
+// global variables and function pointers
 static Queue *shared_queue = NULL; // global struct pointer to shared memory
 static shmem_startup_hook_type prev_shmem_startup_hook = NULL; // hook for initializing shared memory
 static ProcessUtility_hook_type prev_process_utility_hook = NULL;
 
-// Initialize the queue
 void initQueue(Queue* q) {
     // q->front = q->rear = NULL;
     q->head = -1;
@@ -120,6 +137,7 @@ void enqueue(copy_properties* node) {
     LWLockRelease(shared_queue->lock);
 }
 
+// Dequeue operation
 void dequeue() {
     LWLockAcquire(shared_queue->lock, LW_EXCLUSIVE);
     if (shared_queue->head == -1) {
@@ -135,17 +153,28 @@ void dequeue() {
     LWLockRelease(shared_queue->lock);
 }
 
-column_list* add_column(char* name, char* data_type, column_type type, char* table_name, column_list* HEAD ){
+/// @brief Function to insert in the begining of the linked list
+/// @param name The name of colum 
+/// @param data_type Data type of the column 
+/// @param type Type of column which includes KEY1, KEY2, VALUE
+/// @param table_name Name of table
+/// @param HEAD pointer to the first element in the linked list
+/// @return returns the updated linked list after insertion
+column_list* add_column(char* name, char* data_type, column_type type, char* table_name){
     column_list* node = (column_list*)palloc(sizeof(column_list));
     strncpy(node->column_name, name, NAMEDATALEN);
     strncpy(node->data_type, data_type, NAMEDATALEN);
     strncpy(node->table_name, table_name, NAMEDATALEN);
     node->type = type;
-    node->next = HEAD;
-    HEAD = node;
+    node->next = NULL;
+    // node->next = HEAD;
+    // HEAD = node;
     return node;
 }
 
+/// @brief Removes all column elements from the linked list
+/// @param HEAD pointer to the first element of the linked list
+/// @return NULL to update the local pointer to indicate its empty
 column_list* remove_all_columns(column_list* HEAD ){
     column_list* temp = HEAD;
     column_list* next = temp;
@@ -157,6 +186,13 @@ column_list* remove_all_columns(column_list* HEAD ){
     return NULL;
 }
 
+/// @brief helper function which checks whether the given columns are present in the linked list (and to check if there's repetition in the column)
+/// @param table_name name of the table 
+/// @param key_column_1 key1 column name from the format KEY1|KEY2 : VALUE
+/// @param key_column_2 key2 column name from the format KEY1|KEY2 : VALUE
+/// @param value_column_1 value of column name from the format KEY1|KEY2 : VALUE
+/// @param HEAD pointer to the first element of the linked list of columns
+/// @return true or false - whether it passed all the checks or not
 bool search_columns(char* table_name, char* key_column_1, char* key_column_2, char* value_column_1, column_list* HEAD ){
     column_list* temp = HEAD;
     bool flag1 = false;
@@ -201,8 +237,19 @@ bool search_columns(char* table_name, char* key_column_1, char* key_column_2, ch
     }
 }
 
-column_list* valid_columns(char* current_query, char* table_name, char* key_column_1, char* key_column_2, char* value_column_1, bool *validity, int* len, bool showerrors){
+/// @brief creation of linked list of the different columns of the table type `column_properties`  
+/// @param table_name name of table from which the columns are extracted
+/// @param key_column_1 key1 column name from the format KEY1|KEY2 : VALUE
+/// @param key_column_2 key2 column name from the format KEY1|KEY2 : VALUE
+/// @param value_column_1 value of column name from the format KEY1|KEY2 : VALUE
+/// @param validity boolean pointer indicating whether all checks were passed by `search_columns()` 
+/// @param len length of linked list
+/// @param showerrors a false value would not stop the execution when a column repeats or whether it is not found
+/// @return pointer to the first element of the linked list (HEAD)
+column_list* valid_columns(char* table_name, char* key_column_1, char* key_column_2, char* value_column_1, bool *validity, int* len, bool showerrors){
     column_list* HEAD = NULL;
+    column_list* TAIL = NULL;
+    char current_query[QUERY_STRING_LENGTH];
     int result;
     snprintf(current_query, QUERY_STRING_LENGTH, "SELECT a.attname AS column_name, t.typname AS data_type \
         FROM pg_class c\
@@ -211,7 +258,7 @@ column_list* valid_columns(char* current_query, char* table_name, char* key_colu
         WHERE c.relname = '%s' AND a.attnum > 0", table_name);
     result = SPI_execute(current_query, true, 0);
     if(result != SPI_OK_SELECT){
-        elog(ERROR, "Unable to check current details of table_name");
+        elog(ERROR, "Unable to check current details of %s: %d", table_name, result);
         *validity = false;
     }
     if(SPI_processed <=0){
@@ -225,8 +272,15 @@ column_list* valid_columns(char* current_query, char* table_name, char* key_colu
         Datum column_type_bin = SPI_getbinval(SPI_tuptable->vals[i], SPI_tuptable->tupdesc, 2, &isnull);
         char *name = DatumGetCString(column_name_bin);
         char *data_type = DatumGetCString(column_type_bin);
-        HEAD = add_column(name, data_type, UNDEFINED, table_name, HEAD);
-        elog(LOG, "column detected: %s", HEAD->column_name);
+        if(TAIL == NULL && HEAD == NULL){
+            HEAD = add_column(name, data_type, UNDEFINED, table_name);
+            TAIL = HEAD;
+        }else{
+            column_list* new_node = add_column(name, data_type, UNDEFINED, table_name);
+            TAIL->next = new_node;
+            TAIL = new_node;
+        }
+        elog(LOG, "column detected: %s", TAIL->column_name);
         i++;
     }
     *len = i;
@@ -240,7 +294,9 @@ column_list* valid_columns(char* current_query, char* table_name, char* key_colu
     return HEAD;
 }
 
-
+/// @brief SQL function definition which inserts metadata information to the `metadata` relation
+/// @param  NIL handled by postgres
+/// @return `NULL` if insertion fails, `metadata_result` type if insertion is successful - back to client
 Datum metadata_handler(PG_FUNCTION_ARGS){
     // declaring and initializing required variables
     int connection_status;
@@ -273,7 +329,7 @@ Datum metadata_handler(PG_FUNCTION_ARGS){
     elog(LOG, "SPI Successfully Connected");
     bool validity = false;
     int len;
-    column_list* HEAD = valid_columns(current_query, table_name, key_column_1, key_column_2, value_column_1, &validity, &len, true);
+    column_list* HEAD = valid_columns(table_name, key_column_1, key_column_2, value_column_1, &validity, &len, true);
     if(!(validity)){
         PG_RETURN_NULL();
     }
@@ -471,6 +527,8 @@ Datum metadata_handler(PG_FUNCTION_ARGS){
 
 PG_FUNCTION_INFO_V1(metadata_handler);
 
+/// @brief generates a 32 bit uuid string
+/// @param uuid pointer to the string to write uuid content
 void generate_uuid(char *uuid) {
     uuid_t binuuid;
     uuid_generate_random(binuuid);
@@ -483,6 +541,11 @@ void generate_uuid(char *uuid) {
     uuid_unparse(binuuid, uuid);
 #endif
 }
+
+/// @brief Generation of `count` random numbers from 1 to `n`
+/// @param n upper limit of random number generation
+/// @param count number of random numbers
+/// @param result result array containing n unique random numbers
 void generate_unique_random_numbers(int n, int count, int result[]) {
     if (count > n) {
         elog(ERROR, "Error: Cannot generate more unique numbers than the range. Need atleast 3 columns.\n");
@@ -502,33 +565,103 @@ void generate_unique_random_numbers(int n, int count, int result[]) {
         }
     }
 }
-// file writer 
+
+// Definition of strip_newline
+void strip_newline(char *token) {
+    size_t len = strlen(token);
+    if (len > 0 && token[len - 1] == '\n') {
+        token[len - 1] = '\0';
+    }
+}
+
+
+void read_write_csv(const char *read_filename, const char* write_filename, copy_properties* properties, column_list* HEAD){
+    FILE *read_file = fopen(read_filename, "r");
+    FILE *write_file = fopen(write_filename, "w");
+
+    if (write_file == NULL) {
+        elog(ERROR, "Error opening file, check permission for '%s'", write_filename);
+        return;
+    }
+    if(read_file == NULL){
+        elog(ERROR, "Error opening file, check permission for '%s'", read_filename);
+        return;
+    }
+
+    char line[MAX_LINE_LENGTH]; // Buffer to store each line
+    // int row = 0;
+    int key1_column_no, key2_column_no, value_column_no;
+    column_list* temp = HEAD;
+    int i = 0;
+    while(temp != NULL && i<3){
+        if(strncmp(temp->column_name, properties->key1_column, NAMEDATALEN) == 0){
+            key1_column_no = i;
+        }
+        else if(strncmp(temp->column_name, properties->key2_column, NAMEDATALEN) == 0){
+            key2_column_no = i;
+        }
+        else if(strncmp(temp->column_name, properties->value_column, NAMEDATALEN) == 0){
+            value_column_no = i;
+        }
+        temp = temp->next;
+        i++;
+    }
+    
+    while (fgets(line, MAX_LINE_LENGTH, read_file)) {
+        char *token;
+        char *rest = line;
+        char key1[TOKEN_LENGTH] = {0};
+        char key2[TOKEN_LENGTH] = {0};
+        char value[TOKEN_LENGTH] = {0};
+        // int row = 0;
+        int i = 0;
+        while ((token = strsep(&rest, properties->delimiter)) != NULL) {
+            if (*token == '\0') continue;  // Skip empty tokens
+            strip_newline(token);
+            if(i == key1_column_no){
+                strncpy(key1, token, TOKEN_LENGTH);
+            }else if(i == key2_column_no){
+                strncpy(key2, token, TOKEN_LENGTH);
+            }else if(i == value_column_no){
+                strncpy(value, token, TOKEN_LENGTH);
+            }
+            i++;
+        }
+        fprintf(write_file, "%s,%s,%s\n", key1, key2, value);
+    }
+    fclose(write_file);
+    fclose(read_file);
+}
+
+/// @brief Write the key/value data to a csv file according to metadata information in the relation `metadata`
+/// @param properties pointer to struct containing all the parsed data regarding the copy query for  key/value insertion
+/// @return true/false for a successful write operation
 bool write_to_file(copy_properties* properties){
     int connection_status;
     int result;
     char current_query[QUERY_STRING_LENGTH];
-    snprintf(current_query, QUERY_STRING_LENGTH, "SELECT * FROM metadata WHERE table_name = '%s' ORDER BY key_or_value", properties->table_name);
     if ((connection_status = SPI_connect()) != SPI_OK_CONNECT) {
         elog(ERROR, "SPI_connect failed: error code %d", connection_status);
         return false;
     }
+    // collecting table data, validity is not important here
+    char* temp1 = "temp1";
+    char* temp2 = "temp2";
+    char* temp3 = "temp3";
+    bool valid;
+    int len;
+    column_list* HEAD = valid_columns(properties->table_name, temp1, temp2, temp3, &valid, &len, false);
+    snprintf(current_query, QUERY_STRING_LENGTH, "SELECT * FROM metadata WHERE table_name = '%s' ORDER BY key_or_value", properties->table_name);
+    
     result = SPI_execute(current_query, false, 0);
-    column_list* HEAD = NULL;
-    column_list* selected_head = NULL;
+    // column_list* selected_head = NULL;
     char key_column_1[NAMEDATALEN], key_column_2[NAMEDATALEN], value_column_1[NAMEDATALEN];
+    
     if(result != SPI_OK_SELECT || SPI_processed<=0){
         // metadata not found or errored case
         elog(WARNING_CLIENT_ONLY, "Metadata not found for table: %s", properties->table_name);
         elog(WARNING_CLIENT_ONLY, "--Taking key value pairs from random 3 columns for rocksdb--");
-        
-        
-        // collecting table data, validity is not important here
-        char* temp1 = "temp1";
-        char* temp2 = "temp2";
-        char* temp3 = "temp3";
-        bool valid;
-        int len;
-        HEAD = valid_columns(current_query, properties->table_name, temp1, temp2, temp3, &valid, &len, false);
+
         int random_columns[3];
         generate_unique_random_numbers(len, 3, random_columns);
         generate_unique_random_numbers(len, 3, random_columns);
@@ -561,11 +694,9 @@ bool write_to_file(copy_properties* properties){
         column_list* temp = HEAD;
         bool error = false;
         int i = 0;
-        elog(NOTICE, "Column numbers are %d, %d, %d, length: %d", random_columns[0], random_columns[1], random_columns[2], len);
         while(temp!=NULL){
             if(i == random_columns[0]){
                 strncpy(key_column_1, temp->column_name, NAMEDATALEN);
-                selected_head = add_column(temp->column_name,temp->data_type, KEY1, properties->table_name, HEAD);
                 temp->type = KEY1;
                 snprintf(current_query, QUERY_STRING_LENGTH, "INSERT INTO metadata(table_oid, table_name, column_name,\
                     data_type, key_or_value) VALUES(%d, '%s', '%s', '%s', 'KEY1')", 
@@ -576,10 +707,10 @@ bool write_to_file(copy_properties* properties){
                     error = true;
                     break;
                 }
+                strncpy(properties->key1_column, temp->column_name, NAMEDATALEN);
             }
-            if(i == random_columns[1]){
+            else if(i == random_columns[1]){
                 strncpy(key_column_2, temp->column_name, NAMEDATALEN);
-                selected_head = add_column(temp->column_name,temp->data_type, KEY2, properties->table_name, HEAD);
                 temp->type = KEY2;
                 snprintf(current_query, QUERY_STRING_LENGTH, "INSERT INTO metadata(table_oid, table_name, column_name,\
                     data_type, key_or_value) VALUES(%d, '%s', '%s', '%s', 'KEY2')", 
@@ -590,10 +721,10 @@ bool write_to_file(copy_properties* properties){
                     error = true;
                     break;
                 }
+                strncpy(properties->key2_column, temp->column_name, NAMEDATALEN);
             }
-            if(i == random_columns[2]){
+            else if(i == random_columns[2]){
                 strncpy(value_column_1, temp->column_name, NAMEDATALEN);
-                selected_head = add_column(temp->column_name,temp->data_type, VALUE, properties->table_name, HEAD);
                 temp->type = VALUE;
                 snprintf(current_query, QUERY_STRING_LENGTH, "INSERT INTO metadata(table_oid, table_name, column_name,\
                     data_type, key_or_value) VALUES(%d, '%s', '%s', '%s', 'VALUE')", 
@@ -604,6 +735,7 @@ bool write_to_file(copy_properties* properties){
                     error = true;
                     break;
                 }
+                strncpy(properties->value_column, temp->column_name, NAMEDATALEN);
             }
             i++;
             temp = temp->next;
@@ -612,10 +744,11 @@ bool write_to_file(copy_properties* properties){
         if(error){
             elog(NOTICE, "Try again!!");
         }        
-        elog(NOTICE, "Choosen columns: %s|%s for KEY and %s for VALUE", key_column_1, key_column_2, value_column_1);
+        elog(NOTICE, "Choosen columns: %s|%s for KEY and %s for VALUE", properties->key1_column, properties->key2_column, properties->value_column);
+
     }else{
         uint64 i = 0; 
-        while(i<SPI_processed && i<3){
+        while(i<SPI_processed){
             char *table_name = SPI_getvalue(SPI_tuptable->vals[i], SPI_tuptable->tupdesc, 3);
             char *column_name = SPI_getvalue(SPI_tuptable->vals[i], SPI_tuptable->tupdesc, 4);
             char *data_type = SPI_getvalue(SPI_tuptable->vals[i], SPI_tuptable->tupdesc, 5);
@@ -628,16 +761,17 @@ bool write_to_file(copy_properties* properties){
 
             if(strcmp(type, "KEY1") == 0){
                 strncpy(key_column_1, column_name, NAMEDATALEN);
-                selected_head = add_column(column_name, data_type, KEY1, table_name,selected_head);
+                strncpy(properties->key1_column, column_name, NAMEDATALEN);
             }else if(strcmp(type, "KEY2") == 0){
                 strncpy(key_column_2, column_name, NAMEDATALEN);
-                selected_head = add_column(column_name, data_type, KEY2, table_name,selected_head);
-            }else{
+                strncpy(properties->key2_column, column_name, NAMEDATALEN);
+            }else if(strcmp(type, "VALUE") == 0){
                 strncpy(value_column_1, column_name, NAMEDATALEN);
-                selected_head = add_column(column_name, data_type, VALUE, table_name,selected_head);
+                strncpy(properties->value_column, column_name, NAMEDATALEN);
             }
             i++;
         }
+        elog(NOTICE, "Choosen columns: %s|%s for KEY and %s for VALUE", properties->key1_column, properties->key2_column, properties->value_column);
     }
     // FILE *file;
     // char buffer[4096]; // one line buffer
@@ -647,19 +781,8 @@ bool write_to_file(copy_properties* properties){
     snprintf(filename, sizeof(filename), "/tmp/%s.csv", uuid);
 
     elog(NOTICE, "Generated file: %s\n", filename);
-    column_list* temp = selected_head;
-    int i = 0;
-    while(temp!=NULL && i<3){
-        elog(LOG, "%s|%s|%s|%d", temp->table_name, temp->column_name, temp->data_type, temp->type);
-        temp = temp->next;
-        i++;
-    }
-
-    // FILE *file = fopen(filename, "w");
-    // if (file == NULL) {
-    //     elog(FATAL, "File not opened, Tip: check permission for location /tmp");
-    // }
-    // snprintf()
+    read_write_csv(properties->csv_location, filename, properties, HEAD);
+    elog(NOTICE, "Successfuly written key/value pair info");
     if((connection_status = SPI_finish()) == SPI_OK_FINISH){
         elog(LOG, "SPI Successfully disconnected");
     }else{
@@ -672,6 +795,15 @@ bool write_to_file(copy_properties* properties){
     return true;
 }
 
+/// @brief contains the definition for `ProcessUtility_hook` which checks whether it is a copy from operation, extract the parsed data to form the `copy_properties` structure and calls `write_to_file` for write operation 
+/// @param pstmt 
+/// @param queryString 
+/// @param readOnlyTree 
+/// @param context 
+/// @param params 
+/// @param queryEnv 
+/// @param dest 
+/// @param qc 
 void file_writer_for_rocksdb(PlannedStmt *pstmt, const char *queryString, bool readOnlyTree,
                  ProcessUtilityContext context, ParamListInfo params,
                  QueryEnvironment *queryEnv, DestReceiver *dest, QueryCompletion *qc){
@@ -720,6 +852,7 @@ void file_writer_for_rocksdb(PlannedStmt *pstmt, const char *queryString, bool r
     }
 }
 
+/// @brief provides function definition for `shmem_startup_hook()` which initializes the queue of structrues for `rocksdb insertor()` to parse and dequeue in shared memory 
 static void queue_shmem_startup(){
     // RequestAddinShmemSpace(sizeof(Queue));
     // RequestNamedLWLockTranche(QUEUE_LOCK_TRANCHE, 1);
