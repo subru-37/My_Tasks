@@ -5,7 +5,6 @@ project(rockdb_insertor)
 find_program(PG_CONFIG_EXECUTABLE NAMES pg_config)
 find_package(PkgConfig REQUIRED)
 pkg_check_modules(UUID REQUIRED uuid)
-
 if(NOT PG_CONFIG_EXECUTABLE)
     message(FATAL_ERROR "pg_config not found! Ensure PostgreSQL is installed and pg_config is in PATH.")
 endif()
@@ -31,9 +30,15 @@ include_directories("/home/subra-pt7817/Downloads/postgresql-17.2/src/include/st
 include_directories("/home/subra-pt7817/Downloads/postgresql-17.2/src/include/utils")
 include_directories("/home/subra-pt7817/Downloads/postgresql-17.2/src/test/regress")
 
+# Add your custom RocksDB include directory
+include_directories("/home/subra-pt7817/RocksDB/usr/local/include")
+# Add RocksDB lib directory
+link_directories("/home/subra-pt7817/RocksDB/usr/local/lib")
+
 add_library(rocksdb_insertion SHARED rocksdb_insertion.c)
 target_link_libraries(rocksdb_insertion ${PostgreSQL_LIBRARIES})
 target_link_libraries(rocksdb_insertion PRIVATE uuid)
+target_link_libraries(rocksdb_insertion PRIVATE "/home/subra-pt7817/RocksDB/usr/local/lib/librocksdb.so.10")
 set_target_properties(rocksdb_insertion PROPERTIES
     LIBRARY_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/lib"
     PREFIX ""  # Remove default 'lib' prefix

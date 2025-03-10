@@ -6,6 +6,7 @@
 #include "utils/builtins.h" // text_to_cstring
 #include "funcapi.h"
 #include "ipc.h" // type definitions for shmem_startup_hook_type
+#include "miscadmin.h" // type definitions for shmem_request_hook_type
 #include "tcop/utility.h" // process utility hook types
 #include "commands/defrem.h" // for defgetBoolea and similar functions which gives the values of the options
 #include "stdlib.h"
@@ -14,11 +15,18 @@
 #include "storage/proc.h" // data structures for each process's shared memory (latches and all)
 #include "storage/lwlock.h"
 #include "string.h"
+#include "storage/proc.h" // data structures for each process's shared memory (latches and all)
+#include "utils/wait_event.h" // definitions wait events 
+#include "postmaster/bgworker.h" // defines functions and data structures used for defining background workers
+#include "rocksdb/c.h"
+#include "pthread.h"
+
 
 #define QUERY_STRING_LENGTH 1024
 #define QUEUE_LOCK_TRANCHE "MyQueueLock"
+#define DB_CONNECT_LOCK_TRANCHE "RocksDBConnector"
 #define QUEUE_STRUCT "QueueStruct"
-#define MAX_QUEUE_SIZE 100
+#define MAX_QUEUE_SIZE 15
 #define MAX_LINE_LENGTH 4096  // Maximum length for a line in CSV
 #define TOKEN_LENGTH 256
 
@@ -65,30 +73,43 @@ typedef struct {
     char csv_location[1024]; // location of csv file
     char delimiter[NAMEDATALEN]; // type of delimiter inside the csv file
     bool has_header; // whether the csv file includes header information
-    int next; // index of next element in the queue
     char key1_column[NAMEDATALEN]; // 0 indexed column number indicating key1 from csv file 
     char key2_column[NAMEDATALEN]; // 0 indexed column number indicating key2 from csv file 
     char value_column[NAMEDATALEN]; // 0 indexed column number indicating value from csv file 
     int table_oid;
+    char rocksdb_data[NAMEDATALEN];
 } copy_properties;
 
 // queue structure
 typedef struct {
     copy_properties queue[MAX_QUEUE_SIZE];
-    int head, tail, free_index;  
+    int head, tail;  
     LWLock *lock;
 } Queue;
+
+typedef struct{
+    copy_properties* local_copy;
+    rocksdb_t* db_connector;
+}pthread_args;
 
 // global variables and function pointers
 static Queue *shared_queue = NULL; // global struct pointer to shared memory
 static shmem_startup_hook_type prev_shmem_startup_hook = NULL; // hook for initializing shared memory
 static ProcessUtility_hook_type prev_process_utility_hook = NULL;
+static LWLock* db_lock = NULL;
+
+volatile sig_atomic_t got_sigterm = false;  
+
+#if(PG_VERSION_NUM >= 150000)
+    static shmem_request_hook_type prev_shmem_request_hook = NULL;
+#endif
 
 void initQueue(Queue* q) {
     // q->front = q->rear = NULL;
     q->head = -1;
     q->tail = -1;
-    q->free_index = 0;
+    LWLockPadded *tranche = GetNamedLWLockTranche(QUEUE_LOCK_TRANCHE); 
+    q->lock = &tranche[0].lock;
 }
 
 // Check if the queue is empty
@@ -98,47 +119,51 @@ int isEmpty(Queue* q) {
 
 // Enqueue operation
 void enqueue(copy_properties* node) {    
-    LWLockAcquire(shared_queue->lock, LW_EXCLUSIVE);
-    if (shared_queue->free_index >= MAX_QUEUE_SIZE){
-        elog(NOTICE, "Queue is full, waiting");
-        return;
+    if(shared_queue != NULL){
+        if ((shared_queue->tail + 1) % MAX_QUEUE_SIZE == shared_queue->head) {
+            elog(NOTICE, "Queue is full, waiting");
+            LWLockRelease(shared_queue->lock);
+            return;
+        }
+        if (shared_queue->head == -1) {
+            shared_queue->head = 0;
+            shared_queue->tail = 0;
+        } else{
+            shared_queue->tail = (shared_queue->tail + 1) % MAX_QUEUE_SIZE;
+        }
+        int insert_index = shared_queue->tail;
+        elog(LOG, "Inserted Index at %d", insert_index);
+        // Fill node data
+        snprintf(shared_queue->queue[insert_index].table_name, NAMEDATALEN, "%s", node->table_name);
+        snprintf(shared_queue->queue[insert_index].csv_location, 1024, "%s", node->csv_location);
+        snprintf(shared_queue->queue[insert_index].delimiter, NAMEDATALEN, "%s", node->delimiter);
+        shared_queue->queue[insert_index].has_header = node->has_header;
+        snprintf(shared_queue->queue[insert_index].key1_column, NAMEDATALEN, "%s", node->key1_column);
+        snprintf(shared_queue->queue[insert_index].key2_column, NAMEDATALEN, "%s", node->key2_column);
+        snprintf(shared_queue->queue[insert_index].value_column, NAMEDATALEN, "%s", node->value_column);
+        snprintf(shared_queue->queue[insert_index].rocksdb_data, NAMEDATALEN, "%s", node->rocksdb_data);
+        shared_queue->queue[insert_index].table_oid = node->table_oid;
+        // LWLockRelease(shared_queue->lock);
     }
-    int new_node_index = shared_queue->free_index++;
-    // Fill node data
-    snprintf(shared_queue->queue[new_node_index].table_name, NAMEDATALEN, "%s", node->table_name);
-    snprintf(shared_queue->queue[new_node_index].csv_location, 1024, "%s", node->csv_location);
-    snprintf(shared_queue->queue[new_node_index].delimiter, NAMEDATALEN, "%s", node->delimiter);
-    shared_queue->queue[new_node_index].has_header = node->has_header;
-    shared_queue->queue[new_node_index].next = -1;
-    // printf("Inserted: %d\n", value);
-
-    // insertion of new queue
-    if (shared_queue->tail != -1) {
-        shared_queue->queue[shared_queue->tail].next = new_node_index;
-    }
-    shared_queue->tail = new_node_index;
-
-    //if the queue is empty
-    if (shared_queue->head == -1) {
-        shared_queue->head = new_node_index;
-    }
-    LWLockRelease(shared_queue->lock);
 }
 
 // Dequeue operation
 void dequeue() {
-    LWLockAcquire(shared_queue->lock, LW_EXCLUSIVE);
     if (shared_queue->head == -1) {
         elog(LOG, "Queue is empty!\n");
+        LWLockRelease(shared_queue->lock);
         return;
     }
-    int remove_index = shared_queue->head;
-    shared_queue->head = shared_queue->queue[remove_index].next;
 
-    if (shared_queue->head == -1) {
-        shared_queue->tail = -1;  // Queue is empty now
+    // If this was the last element
+    if (shared_queue->head == shared_queue->tail) {
+        shared_queue->head = -1;
+        shared_queue->tail = -1;
+    } else {
+        // Advance head in circular manner
+        shared_queue->head = (shared_queue->head + 1) % MAX_QUEUE_SIZE;
     }
-    LWLockRelease(shared_queue->lock);
+
 }
 
 /// @brief Function to insert in the begining of the linked list
@@ -621,9 +646,9 @@ void read_write_csv(const char *read_filename, const char* write_filename, copy_
             i++;
         }
         if(row == 0){
-            fprintf(write_file, "table_oid,col1len,%s,col2len,%s,col3len,%s\n",key1, key2, value);
+            fprintf(write_file, "table_oid%scol1len%s%s%scol2len%s%s%scol3len%s%s\n", properties->delimiter, properties->delimiter, key1, properties->delimiter, properties->delimiter, key2, properties->delimiter, properties->delimiter, value);
         }else{
-            fprintf(write_file, "%d,%lu,%s,%lu,%s,%lu,%s\n", properties->table_oid, key1len, key1, key2len, key2, valuelen, value);
+            fprintf(write_file, "%d%s%lu%s%s%s%lu%s%s%s%lu%s%s\n", properties->table_oid, properties->delimiter, key1len, properties->delimiter, key1, properties->delimiter, key2len, properties->delimiter, key2, properties->delimiter, valuelen, properties->delimiter, value);
         }
 
         row++;
@@ -743,6 +768,7 @@ bool write_to_file(copy_properties* properties){
 
         if(error){
             elog(NOTICE, "Try again!!");
+            return false;
         }        
         elog(NOTICE, "Choosen columns: %s|%s for KEY and %s for VALUE", properties->key1_column, properties->key2_column, properties->value_column);
 
@@ -782,6 +808,7 @@ bool write_to_file(copy_properties* properties){
     snprintf(filename, sizeof(filename), "/tmp/%s.csv", uuid);
 
     elog(NOTICE, "Generated file: %s\n", filename);
+    snprintf(properties->rocksdb_data, NAMEDATALEN, "/tmp/%s.csv", uuid);
     read_write_csv(properties->csv_location, filename, properties, HEAD);
     elog(NOTICE, "Successfuly written key/value pair info");
     if((connection_status = SPI_finish()) == SPI_OK_FINISH){
@@ -843,6 +870,10 @@ void file_writer_for_rocksdb(PlannedStmt *pstmt, const char *queryString, bool r
             bool status = write_to_file(properties);
             if(!status){
                 elog(NOTICE, "Cancel the operation and try again!");
+            }else{
+                LWLockAcquire(shared_queue->lock, LW_EXCLUSIVE);
+                enqueue(properties);
+                LWLockRelease(shared_queue->lock);
             }
         }
     }
@@ -855,8 +886,6 @@ void file_writer_for_rocksdb(PlannedStmt *pstmt, const char *queryString, bool r
 
 /// @brief provides function definition for `shmem_startup_hook()` which initializes the queue of structrues for `rocksdb insertor()` to parse and dequeue in shared memory 
 static void queue_shmem_startup(){
-    // RequestAddinShmemSpace(sizeof(Queue));
-    // RequestNamedLWLockTranche(QUEUE_LOCK_TRANCHE, 1);
     bool found;
     LWLockAcquire(AddinShmemInitLock, LW_EXCLUSIVE);
     shared_queue = (Queue*)ShmemInitStruct(QUEUE_STRUCT, sizeof(Queue), &found);
@@ -864,11 +893,236 @@ static void queue_shmem_startup(){
         elog(ERROR, "Failed to allocate shared memory");
     }
     if (!found) {
+        elog(LOG,"Initialized shared memory");
         initQueue(shared_queue);
+        LWLockPadded *tranche = GetNamedLWLockTranche(DB_CONNECT_LOCK_TRANCHE);
+        db_lock = &tranche[0].lock;
     }
     LWLockRelease(AddinShmemInitLock);
     if (prev_shmem_startup_hook)
         prev_shmem_startup_hook();
+}
+
+#if (PG_VERSION_NUM >= 150000)
+/*
+ * shmem_requst_hook: request shared memory
+ */
+static void
+extension_shmem_request(void){
+    if (prev_shmem_request_hook)
+            prev_shmem_request_hook();
+    RequestAddinShmemSpace(sizeof(Queue));
+    RequestNamedLWLockTranche(QUEUE_LOCK_TRANCHE, 1);
+    RequestNamedLWLockTranche(DB_CONNECT_LOCK_TRANCHE, 1);
+}
+#endif
+
+void* process_queue_item(void* node){
+    pthread_args* my_args = (pthread_args*)node;
+    LWLockAcquire(db_lock, LW_EXCLUSIVE);
+    rocksdb_t* db = my_args->db_connector;
+    LWLockRelease(db_lock);
+    copy_properties* element = my_args->local_copy;
+    FILE *csv_file = fopen(element->rocksdb_data, "r");
+    if (!csv_file) {
+        elog(ERROR, "Failed to open file: %s", element->rocksdb_data);
+        return NULL; 
+    }
+    char line[4096];  // Buffer for a single line
+    int row_number = 0;
+
+    rocksdb_writebatch_t *batch = rocksdb_writebatch_create();
+    const size_t batch_size_limit = 1000;
+    size_t current_batch_size = 0;
+
+    char total_key[MAX_LINE_LENGTH];
+    char total_value[MAX_LINE_LENGTH];
+    char *err = NULL;
+    
+    while (fgets(line, sizeof(line), csv_file)){
+        if (element->has_header && row_number == 0) {
+                elog(INFO, "Skipping header row.");
+                row_number++;
+                continue;
+        }
+        int table_oid;
+        char *token;
+        char *rest = line;
+        char key1[TOKEN_LENGTH] = {0};
+        char key2[TOKEN_LENGTH] = {0};
+        char value[TOKEN_LENGTH] = {0};
+        size_t key1len;
+        size_t key2len;
+        char *endptr;
+        size_t valuelen;
+
+        //token id
+        token = strsep(&rest, element->delimiter);
+        if (*token == '\0' || token == NULL) {
+            continue;
+        }
+        strip_newline(token);
+        table_oid = strtol(token, &endptr, 10);
+
+        // key 1 length and key1
+        token = strsep(&rest, element->delimiter);
+        strip_newline(token);
+        if (*token == '\0' || token == NULL) {
+            continue;
+        }
+        key1len = strtol(token, &endptr, 10);
+        token = strsep(&rest, element->delimiter);
+        strip_newline(token);
+        if (*token == '\0' || token == NULL) {
+            continue;
+        }
+        strncpy(key1, token, TOKEN_LENGTH);
+
+        //key2 length and key 2
+        token = strsep(&rest, element->delimiter);
+        strip_newline(token);
+        if (*token == '\0' || token == NULL) {
+            continue;
+        }
+        key2len = strtol(token, &endptr, 10);
+        token = strsep(&rest, element->delimiter);
+        strip_newline(token);
+        if (*token == '\0' || token == NULL) {
+            continue;
+        }
+        strncpy(key2, token, TOKEN_LENGTH);
+
+        //value length and value
+        token = strsep(&rest, element->delimiter);
+        strip_newline(token);
+        if (*token == '\0' || token == NULL) {
+            continue;
+        }
+        valuelen = strtol(token, &endptr, 10);
+        token = strsep(&rest, element->delimiter);
+        if (*token == '\0' || token == NULL) {
+            continue;
+        }
+        strncpy(value, token, TOKEN_LENGTH);
+
+        snprintf(total_key, MAX_LINE_LENGTH, "%d|%lu|%s|%lu|%s", table_oid, key1len, key1, key2len, key2);
+        snprintf(total_value, MAX_LINE_LENGTH, "%d|%lu|%s", table_oid, valuelen, value);
+
+        rocksdb_writebatch_put(batch, total_key, strlen(total_key), total_value, strlen(total_value));
+        elog(LOG, "Batch Write Done");
+        current_batch_size++;
+
+        if (current_batch_size >= batch_size_limit) {
+            LWLockAcquire(db_lock, LW_EXCLUSIVE);
+            rocksdb_writeoptions_t* write_options = rocksdb_writeoptions_create();
+            rocksdb_write(db, write_options, batch, &err);  // Write the batch to RocksDB
+            elog(LOG, "Batch flushed to Memtable");
+            LWLockRelease(db_lock);
+            rocksdb_writebatch_clear(batch);  // Clear the batch after writing
+            current_batch_size = 0;  // Reset the batch size counter
+            // Optionally, you can log or track progress here
+        }
+        
+    }
+
+    if (current_batch_size > 0) {
+        rocksdb_writeoptions_t* write_options = rocksdb_writeoptions_create();
+        elog(LOG, "Batch flushed to Memtable");
+        LWLockAcquire(db_lock, LW_EXCLUSIVE);
+        rocksdb_write(db, write_options, batch, &err);
+        LWLockRelease(db_lock);
+        rocksdb_writebatch_clear(batch);
+    }
+
+    // Clean up and close file
+    fclose(csv_file);
+    rocksdb_writebatch_destroy(batch);  // Destroy the write batch
+    pthread_exit(NULL);
+    if(remove(shared_queue->queue[shared_queue->head].rocksdb_data) == 0){
+        elog(LOG, "Successfuly removed temp file");
+    }
+
+}
+
+/* Signal handler for SIGTERM */
+void SignalHandlerForShutdown() {
+    got_sigterm = true;
+    SetLatch(&MyProc->procLatch);  /* Wake up worker */ // immediately wakes up the process
+}
+
+void rocksdb_bg_worker_main(){
+    pqsignal(SIGTERM, SignalHandlerForShutdown); // process termination signal
+    pqsignal(SIGINT, SignalHandlerForShutdown); // Interactive attention signal
+
+    BackgroundWorkerUnblockSignals(); 
+
+    elog(LOG, "RocksDB background worker started.");
+    rocksdb_t *db;
+    rocksdb_options_t *options = rocksdb_options_create();
+    char *err = NULL;
+
+    // Set options for RocksDB
+    rocksdb_options_set_create_if_missing(options, 1);
+    rocksdb_options_set_write_buffer_size(options, 64 * 1024 * 1024); 
+    rocksdb_options_set_max_background_compactions(options, 2);
+    rocksdb_options_set_max_background_flushes(options, 2); 
+    rocksdb_options_set_max_write_buffer_number(options, 5);
+
+    db = rocksdb_open(options, "/tmp/rdb", &err);
+    if (err != NULL) {
+        elog(LOG, "Error opening RocksDB: %s\n", err);
+        rocksdb_options_destroy(options);
+        return;
+    }
+
+    while (!got_sigterm) {
+        int rc;
+        rc = WaitLatch(
+            &MyProc->procLatch, 
+            WL_LATCH_SET | WL_TIMEOUT | WL_POSTMASTER_DEATH, // Conditions that wakes up the process
+            1000L,  /* 1-second timeout */
+            PG_WAIT_EXTENSION // wait event
+        );
+
+        ResetLatch(&MyProc->procLatch);
+        if (rc & WL_POSTMASTER_DEATH) {
+            elog(LOG, "Postmaster has died, exiting.");
+            proc_exit(1);
+        }
+
+        /* Acquire shared memory lock */
+        // check out AddinShmemInitLock
+        // create my own lock for this implementation
+        if (shared_queue == NULL) {
+            elog(LOG, "Shared memory not initialized");
+            continue;
+        }else{
+            // pg_usleep(1000000);
+            LWLockAcquire(shared_queue->lock, LW_EXCLUSIVE);
+            if (shared_queue->head == -1) {
+                elog(LOG, "Queue empty");
+                LWLockRelease(shared_queue->lock);
+                continue;
+            }else{
+                copy_properties* local_copy = (copy_properties*)palloc(sizeof(copy_properties));  // or palloc
+                memcpy(local_copy, &shared_queue->queue[shared_queue->head], sizeof(copy_properties));
+                dequeue();
+                pthread_t tid;
+                pthread_args* args = (pthread_args*)palloc(sizeof(pthread_args));
+                LWLockAcquire(db_lock, LW_EXCLUSIVE);
+                args->db_connector = db;
+                LWLockRelease(db_lock);
+                args->local_copy = local_copy;
+                pthread_create(&tid, NULL, process_queue_item, (void *)args);
+                pthread_detach(tid);
+                LWLockRelease(shared_queue->lock);
+            }
+        }
+    }
+    rocksdb_close(db);
+    rocksdb_options_destroy(options);
+
+
 }
 
 void _PG_init(void){
@@ -876,8 +1130,31 @@ void _PG_init(void){
     prev_process_utility_hook = ProcessUtility_hook;
     ProcessUtility_hook = file_writer_for_rocksdb;
 
+    #if(PG_VERSION_NUM >= 150000)
+        prev_shmem_request_hook = shmem_request_hook;
+        shmem_request_hook = extension_shmem_request;
+    #else 
+        RequestAddinShmemSpace(sizeof(Queue));
+        RequestNamedLWLockTranche(QUEUE_LOCK_TRANCHE, 1);
+    #endif
+
     prev_shmem_startup_hook = shmem_startup_hook;
     shmem_startup_hook = queue_shmem_startup;
+
+    BackgroundWorker worker;
+    memset(&worker, 0, sizeof(BackgroundWorker));
+
+    snprintf(worker.bgw_name,  BGW_MAXLEN,"rocksdb_worker");
+    snprintf(worker.bgw_function_name,  BGW_MAXLEN,"rocksdb_bg_worker_main");
+    snprintf(worker.bgw_library_name,  BGW_MAXLEN,"rocksdb_insertion");
+    
+    worker.bgw_start_time = BgWorkerStart_RecoveryFinished;
+    // worker.bgw_start_time = BgWorkerStart_PostmasterStart;
+    worker.bgw_restart_time = BGW_NEVER_RESTART;
+    worker.bgw_main_arg = Int32GetDatum(0);
+    worker.bgw_flags = BGWORKER_SHMEM_ACCESS;
+
+    RegisterBackgroundWorker(&worker);
 }
 
 void _PG_fini(void){
